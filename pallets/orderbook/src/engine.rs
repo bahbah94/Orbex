@@ -52,11 +52,10 @@ pub fn match_pending_internal<T: Config>(
         
           
 
+        orders_map.insert(order_id, order.clone());
+    
         if order.status != OrderStatus::Filled {
             add_order_to_book(&order, &mut bid_book, &mut ask_book);
-            orders_map.insert(order_id, order.clone());
-        } else {
-            orders_map.remove(&order.order_id);
         }
     }
 
@@ -93,11 +92,9 @@ pub fn match_persistent_storage<T:Config>(
 
         trades.extend(order_trades.unwrap());
 
-        if order.status == OrderStatus::Filled {
-            orders_map.remove(&order_id);  // Remove filled orders
-        } else {
-            orders_map.insert(*order_id, order.clone());  // Keep active orders
-            // also add to persistent storage
+        orders_map.insert(*order_id, order.clone());
+
+        if order.status != OrderStatus::Filled {
             add_order_to_book(&order, persistent_bids, persistent_asks);
         }
     }

@@ -228,4 +228,7 @@ mod runtime {
 
 	#[runtime::pallet_index(8)]
 	pub type Assets = pallet_assets;
+
+	#[runtime::pallet_index(9)]
+	pub type Orderbook = pallet_orderbook;
 }

@@ -215,6 +215,7 @@ pub mod pallet {
         NoMatchingOrders,
     }
 
+    
 
     // ========================================
     // HOOKS FOR MATCHING
@@ -222,7 +223,7 @@ pub mod pallet {
 
     #[pallet::hooks]
     impl<T:Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
-        fn on_finalize(_n: BlockNumberFor<T>) {
+         fn on_finalize(_n: BlockNumberFor<T>) {
             let mut orders_map = BTreeMap::new();
 
             //load all orders, will need to modify for sure
@@ -294,7 +295,7 @@ pub mod pallet {
                 all_trades.extend(persistent_trades);
             }
 
-            /// At this point, we have in memory done all necessary transactions
+            // At this point, we have in memory done all necessary transactions
             // Now we need to adjust order/money management
             let mut total_volume = 0u128;
         
@@ -320,9 +321,10 @@ pub mod pallet {
                 trade.quantity,
             );
             
-            // Unlock funds for both parties
-            let _ = assets::Pallet::<T>::unlock_funds(&trade.seller, USDT, usdt_amount);
-            let _ = assets::Pallet::<T>::unlock_funds(&trade.buyer, ETH, trade.quantity);
+            // Unlock funds for both parties(NOt required i realized that transfer_locked alredy transfer
+            //to free balance, unlocking might unlock some other things not in the trade)
+            //let _ = assets::Pallet::<T>::unlock_funds(&trade.seller, USDT, usdt_amount);
+            //let _ = assets::Pallet::<T>::unlock_funds(&trade.buyer, ETH, trade.quantity);
             
             // Store trade
             Trades::<T>::insert(trade_id, trade.clone());
@@ -449,6 +451,7 @@ pub mod pallet {
 
     #[pallet::call]
     impl<T:Config> Pallet<T> {
+
         /// Place a limit order
         #[pallet::call_index(0)]
         #[pallet::weight(10000)]
@@ -532,6 +535,60 @@ pub mod pallet {
             Self::deposit_event(Event::CancellationRequested { order_id: order.order_id, trader: trader });
 
             Ok(())
+        }
+    }
+
+    // ======================================
+    // Getter functions for storage/for some reason, directly acccessing them doesnt work
+    // =======================================
+    impl<T:Config> Pallet<T> {
+        pub fn next_order_id() -> OrderId {
+            NextOrderId::<T>::get()
+        }
+        
+        /// Get the next trade ID
+        pub fn next_trade_id() -> TradeId {
+            NextTradeId::<T>::get()
+        }
+        
+        /// Get an order by ID
+        pub fn get_order(order_id: OrderId) -> Option<Order<T>> {
+            Orders::<T>::get(order_id)
+        }
+        
+        /// Get a trade by ID
+        pub fn get_trade(trade_id: TradeId) -> Option<Trade<T>> {
+            Trades::<T>::get(trade_id)
+        }
+        
+        /// Get bids at a specific price level
+        pub fn get_bids_at_price(price: Amount) -> Vec<OrderId> {
+            Bids::<T>::get(price).into_inner()
+        }
+        
+        /// Get asks at a specific price level
+        pub fn get_asks_at_price(price: Amount) -> Vec<OrderId> {
+            Asks::<T>::get(price).into_inner()
+        }
+        
+        /// Get pending bids at a specific price level
+        pub fn get_pending_bids_at_price(price: Amount) -> Vec<OrderId> {
+            PendingBids::<T>::get(price).into_inner()
+        }
+        
+        /// Get pending asks at a specific price level
+        pub fn get_pending_asks_at_price(price: Amount) -> Vec<OrderId> {
+            PendingAsks::<T>::get(price).into_inner()
+        }
+        
+        /// Get pending cancellations
+        pub fn get_pending_cancellations() -> Vec<OrderId> {
+            PendingCancellations::<T>::get().into_inner()
+        }
+        
+        /// Get user's orders
+        pub fn get_user_orders(user: &T::AccountId) -> Vec<OrderId> {
+            UserOrders::<T>::get(user).into_inner()
         }
     }
 }
