@@ -38,6 +38,9 @@ use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_runtime::{traits::One, Perbill};
 use sp_version::RuntimeVersion;
 
+use pallet_assets;
+//use pallet_orderbook;
+
 // Local module imports
 use super::{
 	AccountId, Aura, Balance, Balances, Block, BlockNumber, Hash, Nonce, PalletInfo, Runtime,
@@ -127,7 +130,7 @@ impl pallet_balances::Config for Runtime {
 	/// The ubiquitous event type.
 	type RuntimeEvent = RuntimeEvent;
 	type DustRemoval = ();
-	type ExistentialDeposit = ConstU128<EXISTENTIAL_DEPOSIT>;
+	type ExistentialDeposit = ConstU128<{EXISTENTIAL_DEPOSIT}>;
 	type AccountStore = System;
 	type WeightInfo = pallet_balances::weights::SubstrateWeight<Runtime>;
 	type FreezeIdentifier = RuntimeFreezeReason;
@@ -136,6 +139,8 @@ impl pallet_balances::Config for Runtime {
 	type RuntimeFreezeReason = RuntimeFreezeReason;
 	type DoneSlashHandler = ();
 }
+
+
 
 parameter_types! {
 	pub FeeMultiplier: Multiplier = Multiplier::one();
@@ -176,10 +181,11 @@ parameter_types! {
     pub const MaxUserOrders: u32 = 1000;              // Max 100 orders per user in tests
 }
 
-impl pallet_orderbook::Config for Test {
+impl pallet_orderbook::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type MaxPendingOrders = MaxPendingOrders;
     type MaxCancellationOrders = MaxCancellationOrders;
     type MaxOrders = MaxOrders;
     type MaxUserOrders = MaxUserOrders;
 }
+
