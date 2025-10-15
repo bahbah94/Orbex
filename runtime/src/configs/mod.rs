@@ -186,18 +186,3 @@ impl pallet_orderbook::Config for Runtime {
     type MaxUserOrders = MaxUserOrders;
     type WeightInfo = pallet_orderbook::weights::SubstrateWeight<Runtime>;
 }
-
-parameter_types! {
-    pub const MaxPendingOrders: u32 = 1000;           // Max 100 pending orders per block in tests
-    pub const MaxCancellationOrders: u32 = 50;       // Max 50 cancellations per block in tests
-    pub const MaxOrders: u32 = 10000;                 // Max 1000 orders per price level in tests
-    pub const MaxUserOrders: u32 = 1000;              // Max 100 orders per user in tests
-}
-
-impl pallet_orderbook::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
-    type MaxPendingOrders = MaxPendingOrders;
-    type MaxCancellationOrders = MaxCancellationOrders;
-    type MaxOrders = MaxOrders;
-    type MaxUserOrders = MaxUserOrders;
-}
