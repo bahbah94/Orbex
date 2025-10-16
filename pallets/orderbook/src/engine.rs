@@ -44,8 +44,6 @@ pub fn match_pending_internal<T: Config>(
 
         orders_map.insert(order_id, order.clone());
 
-        orders_map.insert(order_id, order.clone());
-    
         if order.status != OrderStatus::Filled {
             add_order_to_book(&order, &mut bid_book, &mut ask_book);
         }
