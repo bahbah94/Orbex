@@ -1,0 +1,158 @@
+📚 COMPOSITE VALUE STRUCTURE REFERENCE
+=====================================
+
+There are two main scenarios:
+
+1️⃣ SIMPLE FIELD (like price, quantity, trade_id)
+==========================================
+
+Structure:
+┌─ Named Composite (the event)
+│  ├─ ("price", Value)
+│  │  └─ ValueDef::Primitive(U128(100))
+│  └─ ("quantity", Value)
+│     └─ ValueDef::Primitive(U128(10))
+
+Code:
+```rust
+fn extract_u128_by_name(value: &Value, field_name: &str) -> Result<u128> {
+    if let ValueDef::Composite(Composite::Named(fields)) = &value.value {
+        //                                    ^^^^^^ Layer 1: Named
+        for (name, field_value) in fields {
+            if name == field_name {
+                if let ValueDef::Primitive(Primitive::U128(val)) = &field_value.value {
+                    //                        ^^^^^^^^ Layer 2: Primitive (END)
+                    return Ok(*val);
+                }
+            }
+        }
+    }
+    Err(...)
+}
+```
+
+Layers: 2 (Named → Primitive)
+
+
+2️⃣ ACCOUNT FIELD (like buyer, seller)
+==========================================
+
+Structure:
+┌─ Named Composite (the event)
+│  └─ ("buyer", Value)
+│     └─ ValueDef::Composite(Unnamed([...]))
+│        └─ [0] = Value
+│           └─ ValueDef::Composite(Unnamed([byte1, byte2, ..., byte32]))
+│              └─ [0] = Value
+│                 └─ ValueDef::Primitive(U128(212))
+│              ├─ [1] = Value
+│              │  └─ ValueDef::Primitive(U128(53))
+│              └─ ... (32 total bytes)
+
+Visual:
+```
+TradeExecuted Event (Named Composite)
+│
+├─ trade_id: 0 (Primitive::U128)
+├─ buy_order_id: 0 (Primitive::U128)
+├─ price: 100 (Primitive::U128)
+│
+└─ buyer: (Unnamed Composite - Layer 1)
+   │
+   └─ [0]: (Unnamed Composite - Layer 2)
+      │
+      ├─ [0]: 212 (Primitive::U128) ← byte 0
+      ├─ [1]: 53  (Primitive::U128) ← byte 1
+      ├─ [2]: 147 (Primitive::U128) ← byte 2
+      ├─ [3]: 199 (Primitive::U128) ← byte 3
+      ├─ ...
+      └─ [31]: 72 (Primitive::U128) ← byte 31
+```
+
+Code:
+```rust
+fn extract_account_by_name(value: &Value, field_name: &str) -> Result<String> {
+    if let ValueDef::Composite(Composite::Named(fields)) = &value.value {
+        //                                    ^^^^^^ Layer 0: Named (the event)
+        for (name, field_value) in fields {
+            if name == field_name {
+                if let ValueDef::Composite(Composite::Unnamed(bytes)) = &field_value.value {
+                    //                          ^^^^^^ Layer 1: Unnamed (outer wrapper)
+                    if let ValueDef::Composite(Composite::Unnamed(inner_bytes)) = &bytes[0].value {
+                        //                          ^^^^^^ Layer 2: Unnamed (the 32 bytes)
+                        let mut account_bytes = Vec::new();
+                        for byte_val in inner_bytes {
+                            if let ValueDef::Primitive(Primitive::U128(b)) = &byte_val.value {
+                                //                        ^^^^^^^^ Layer 3: Primitive (END)
+                                account_bytes.push(*b as u8);
+                            }
+                        }
+                        return Ok(format!("0x{}", hex::encode(&account_bytes)));
+                    }
+                }
+            }
+        }
+    }
+    Err(...)
+}
+```
+
+Layers: 4 (Named → Unnamed → Unnamed → Primitive)
+
+
+WHY THE EXTRA UNNAMED LAYER?
+=============================
+
+The account is 32 bytes. On-chain it's stored as:
+- Inner layer: the 32 actual bytes [byte0, byte1, ..., byte31]
+- Outer layer: wrapper around it (because Substrate wraps it)
+
+So when you extract, you get:
+1. Named fields (event structure)
+2. Unnamed wrapper (outer layer)
+3. Index [0] to get to actual bytes
+4. Unnamed bytes (32 u128 values)
+5. Loop through to extract each byte
+
+
+QUICK REFERENCE TABLE
+======================
+
+Field Type          | Layers | Structure                  | How to Extract
+─────────────────────────────────────────────────────────────────────────
+price/quantity      | 2      | Named → Primitive(U128)    | extract_u128_by_name()
+trade_id            | 2      | Named → Primitive(U128)    | extract_u128_by_name()
+buyer/seller        | 4      | Named → Unnamed → Unnamed  | extract_account_by_name()
+                    |        | → Primitive(U128) × 32     |
+
+
+COMPLETE EXAMPLE
+================
+
+Event:
+```rust
+TradeExecuted {
+    trade_id: 0,
+    buy_order_id: 0,
+    buyer: 5GrwvaEF5zXb26Fxwy5dgxo6Xd8dLhvQz4ByZvtG4sxq,
+    price: 100,
+    quantity: 10,
+}
+```
+
+Parsing:
+```rust
+let trade_id = extract_u128_by_name(&event, "trade_id")?;     // 0
+let buy_order_id = extract_u128_by_name(&event, "buy_order_id")?; // 0
+let buyer = extract_account_by_name(&event, "buyer")?;  // "0x..." 32 bytes
+let price = extract_u128_by_name(&event, "price")?;     // 100
+let quantity = extract_u128_by_name(&event, "quantity")?; // 10
+
+// Result:
+// trade_id: 0
+// buy_order_id: 0
+// buyer: 0xd43593c715fdd31c6115999999999999999999999999999999999999999999
+// price: 100
+// quantity: 10
+// value: 1000
+```
