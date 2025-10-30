@@ -1,12 +1,18 @@
 use std::result;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use sqlx::PgPool;
 use subxt::{OnlineClient, PolkadotConfig};
 use tracing::{info, debug};
 use subxt::ext::scale_value::{Value, Composite,Primitive};
+use crate::order_extractor::*;
+use crate::orderbook_reducer::{OrderbookState, OrderInfo};
 
-pub async fn start(node_url: &str, pool: PgPool) -> Result<()> {
+pub async fn start(
+    node_url: &str, 
+    pool: PgPool,
+    orderbook_state: Arc<Mutex<OrderbookState>>) -> Result<()> {
     let api = OnlineClient::<PolkadotConfig>::from_url(node_url).await?;
     
     info!("✅ Connected to chain: {:?}", api.runtime_version());
@@ -60,19 +66,74 @@ pub async fn start(node_url: &str, pool: PgPool) -> Result<()> {
                 },
                 ("Orderbook", "OrderPlaced") => {
                     info!("📦 Order placed in block {}", block_number);
-                    println!("Order placed with raw events {}", event_values);
+                    //println!("Full event_values: {:#?}", event_values);
+                    match extract_order_placed(&event_values) {
+                        Ok(data) => {
+                            println!("📦 OrderPlaced: id={}, side={}, price={}, qty={}", 
+                                data.order_id, data.side, data.price, data.quantity);
+                                let mut state = orderbook_state.lock().unwrap();
+                                let order = OrderInfo {
+                                    order_id: data.order_id as u64,
+                                    side: data.side,
+                                    price: data.price,
+                                    quantity: data.quantity,
+                                    filled_quantity: 0,
+                                    status: "Open".to_string(),
+                                };
+                                state.add_order(order);
+                                info!("✅ Order #{} added to state", data.order_id);
+                            }
+                        Err(e) => println!("❌ Failed to parse orderplaced: {}", e),
+                    }
                 },
                 ("Orderbook", "OrderCancelled") => {
                     info!("❌ Order cancelled in block {}", block_number);
-                    println!("Order cancelled with raw events {}", event_values);
+                    match extract_order_cancelled(&event_values) {
+                        Ok(data) => {
+                            println!("❌ OrderCancelled: id={}, trader={}", data.order_id, data.trader);
+
+                            let mut state = orderbook_state.lock().unwrap();
+                            let _ = state.cancel_order(data.order_id as u64);
+                            info!("✅ Order #{} cancelled", data.order_id);
+                        }
+                        Err(e) => println!("❌ Failed to parse orderCancelled: {}", e),
+                    }
                 },
                 ("Orderbook", "OrderFilled") => {
                     info!("✅ Order filled in block {}", block_number);
-                    println!("Order filled with raw events {}", event_values);
+                    match extract_order_filled(&event_values) {
+                        Ok(data) => {
+                            println!("✅ OrderFilled: id={}, trader={}", data.order_id, data.trader);
+                            let mut state = orderbook_state.lock().unwrap();
+                            let quantity = {
+                                state.orders.get(&(data.order_id as u64))
+                                    .map(|order| order.quantity)
+                            };
+                            
+                            // Now use the mutable state, doing this to fix clash of mut and immut borrow from before
+                            if let Some(qty) = quantity {
+                                let _ = state.update_order(data.order_id as u64, qty, "Filled");
+                            }
+                            info!("✅ Order #{} marked as filled", data.order_id);
+                        }
+                        Err(e) => println!("❌ Failed to parse order filled: {}", e),
+                    }
                 },
                 ("Orderbook", "OrderPartiallyFilled") => {
                     info!("📊 Order partially filled in block {}", block_number);
-                    println!("Order partiallyfilled with raw events {}", event_values);
+                    match extract_order_partially_filled(&event_values) {
+                        Ok(data) => {
+                            println!("📊 OrderPartiallyFilled: id={}, filled={}, remaining={}", 
+                                data.order_id, data.filled_quantity, data.remaining_quantity);
+                            
+                            let mut state = orderbook_state.lock().unwrap();
+                            let _ = state.update_order(data.order_id as u64, data.filled_quantity, "PartiallyFilled");
+                            info!("✅ Order #{} partially filled ({}/{})", 
+                                data.order_id, data.filled_quantity, data.filled_quantity + data.remaining_quantity);
+                        }
+                        Err(e) => println!("❌ Failed: {}", e),
+                    }
+            
                 },
                 _ => {
                     // Ignore events from other pallets

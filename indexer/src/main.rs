@@ -7,6 +7,11 @@ mod db;
 mod event_collector;
 mod trade_mapper;
 mod orderbook_reducer;
+mod order_extractor;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+use orderbook_reducer::OrderbookState;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -30,9 +35,13 @@ async fn main() -> Result<()> {
     let pool = db::init_pool(&db_url).await?;
     db::run_migrations(&pool).await?;
 
+    info!("📈 Initializing orderbook state...");
+    let orderbook_state = Arc::new(Mutex::new(OrderbookState::new()));
+
+
     // Start event collector
     info!("🔌 Connecting to node at {}", node_url);
-    event_collector::start(&node_url, pool).await?;
+    event_collector::start(&node_url, pool, orderbook_state).await?;
 
     Ok(())
 }
