@@ -1,5 +1,6 @@
 use std::result;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use anyhow::Result;
 use sqlx::PgPool;
@@ -71,7 +72,7 @@ pub async fn start(
                         Ok(data) => {
                             println!("📦 OrderPlaced: id={}, side={}, price={}, qty={}", 
                                 data.order_id, data.side, data.price, data.quantity);
-                                let mut state = orderbook_state.lock().unwrap();
+                                let mut state = orderbook_state.lock().await;
                                 let order = OrderInfo {
                                     order_id: data.order_id as u64,
                                     side: data.side,
@@ -92,7 +93,7 @@ pub async fn start(
                         Ok(data) => {
                             println!("❌ OrderCancelled: id={}, trader={}", data.order_id, data.trader);
 
-                            let mut state = orderbook_state.lock().unwrap();
+                            let mut state = orderbook_state.lock().await;
                             let _ = state.cancel_order(data.order_id as u64);
                             info!("✅ Order #{} cancelled", data.order_id);
                         }
@@ -104,7 +105,7 @@ pub async fn start(
                     match extract_order_filled(&event_values) {
                         Ok(data) => {
                             println!("✅ OrderFilled: id={}, trader={}", data.order_id, data.trader);
-                            let mut state = orderbook_state.lock().unwrap();
+                            let mut state = orderbook_state.lock().await;
                             let quantity = {
                                 state.orders.get(&(data.order_id as u64))
                                     .map(|order| order.quantity)
@@ -126,7 +127,7 @@ pub async fn start(
                             println!("📊 OrderPartiallyFilled: id={}, filled={}, remaining={}", 
                                 data.order_id, data.filled_quantity, data.remaining_quantity);
                             
-                            let mut state = orderbook_state.lock().unwrap();
+                            let mut state = orderbook_state.lock().await;
                             let _ = state.update_order(data.order_id as u64, data.filled_quantity, "PartiallyFilled");
                             info!("✅ Order #{} partially filled ({}/{})", 
                                 data.order_id, data.filled_quantity, data.filled_quantity + data.remaining_quantity);

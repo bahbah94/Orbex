@@ -4,14 +4,11 @@ use std::env;
 use tracing::info;
 
 mod db;
-mod event_collector;
-mod trade_mapper;
-mod orderbook_reducer;
-mod order_extractor;
+mod indexer;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use orderbook_reducer::OrderbookState;
+use indexer::orderbook_reducer::OrderbookState;
 
 #[tokio::main]
 async fn main() -> Result<()> {
