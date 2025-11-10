@@ -6,6 +6,7 @@ use sqlx::PgPool;
 use crate::indexer::order_mapper::OrderbookState;
 
 
+
 pub async fn run_server(
     orderbook: Arc<Mutex<OrderbookState>>,
     pool: PgPool,
@@ -16,6 +17,9 @@ pub async fn run_server(
             //REST API endpoints
             .route("/api/orderbook", get(handlers::orderbook::get_orderbook))
             .route("/api/order/:id", get(handlers::orderbook::get_order))
+
+            //add the udf stuff
+            .nest("/udf", handlers::udf::udf_routes())
 
             //websocket stuff
             .route("ws/orderbook", get(websocket::ws_orderbook::ws_handler))
