@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use sqlx::PgPool;
 use serde_json::json;
-use crate::indexer::order_mapper::OrderbookState;
+use crate::indexer::orderbook_reducer::{OrderbookState, get_orderbook_snapshot};
 
 // Type alias for our shared state
 pub type AppState = (Arc<Mutex<OrderbookState>>, PgPool);

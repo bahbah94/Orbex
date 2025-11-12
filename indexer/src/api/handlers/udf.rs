@@ -10,14 +10,14 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use sqlx::PgPool;
-use crate::indexer::order_mapper::OrderbookState;
+use crate::indexer::orderbook_reducer::OrderbookState;
 
 pub type AppState = (Arc<Mutex<OrderbookState>>, PgPool);
 
 const EXCHANGE: &str = "Polkadex";
 const TIMEZONE: &str = "UTC";
-const SYMBOL: &str = "BTC/USD";  // Your symbol
-const SUPPORTED_RESOLUTIONS: &[&str] = &["1", "5", "15", "30", "60", "1D", "1W", "1M"];
+const SYMBOL: &str = "ETH/USDC";  // Your symbol
+const SUPPORTED_RESOLUTIONS: &[&str] = &["1", "5", "15", "30", "60", "240", "1D", "1W", "1M"];
 
 #[derive(Debug, Deserialize)]
 pub struct QuoteQuery {
@@ -103,11 +103,11 @@ pub async fn udf_search() -> impl IntoResponse {
     Json(vec![
         json!({
             "symbol": SYMBOL,
-            "full_name": "Bitcoin / USD",
-            "description": "Bitcoin",
+            "full_name": "Ethereum / USDC",
+            "description": "Ethereum",
             "exchange": EXCHANGE,
             "type": "crypto",
-            "ticker": "BTCUSD"
+            "ticker": "ETHUSDC"
         })
     ])
 }
@@ -122,44 +122,157 @@ pub async fn udf_time() -> impl IntoResponse {
 pub async fn udf_resolve() -> impl IntoResponse {
     Json(json!({
         "s": "ok",
-        "symbol": "BTC/USD",
-        "description": "Bitcoin / USD",
+        "symbol": SYMBOL,
+        "description": "Ethereum / USDC",
         "type": "crypto",
-        "exchange": "Polkadex/CLOB",
+        "exchange": EXCHANGE,
         "minmove": 1,
         "pricescale": 100,
-        "timezone": "UTC",
+        "timezone": TIMEZONE,
         "session": "24x7",
         "has_intraday": true,
         "has_daily": true,
-        "supported_resolutions": ["1", "5", "15", "30", "60", "1D"],
+        "has_weekly_and_monthly": true,
+        "supported_resolutions": SUPPORTED_RESOLUTIONS,
     }))
 }
 
+/// TradingView UDF getBars implementation
+///
+/// Returns historical OHLCV data from TimescaleDB continuous aggregates.
+/// https://www.tradingview.com/charting-library-docs/latest/connecting_data/datafeed-api/required-methods#getbars
+///
+/// # Query Parameters (HistoryQuery)
+/// - `symbol`: Trading pair (e.g., "ETH/USDC")
+/// - `from`: Start timestamp in SECONDS (Unix epoch)
+/// - `to`: End timestamp in SECONDS (Unix epoch)
+/// - `resolution`: Time interval (1, 5, 15, 30, 60, 240, 1D, 1W, 1M)
+///
+/// # Response Format
+/// Success:
+/// ```json
+/// {
+///   "s": "ok",
+///   "t": [1699000000, 1699000060],  // timestamps in seconds
+///   "o": [2000.0, 2010.0],          // open prices
+///   "h": [2100.0, 2110.0],          // high prices
+///   "l": [1950.0, 1960.0],          // low prices
+///   "c": [2050.0, 2060.0],          // close prices
+///   "v": [15000.0, 16000.0]         // volumes
+/// }
+/// ```
+///
+/// No data:
+/// ```json
+/// {
+///   "s": "no_data",
+///   "nextTime": 1699000000
+/// }
+/// ```
 pub async fn udf_bars(
     Query(params): Query<HistoryQuery>,
     State((_orderbook, pool)): State<AppState>,
 ) -> impl IntoResponse {
-    // Query your trades table from database
-    // Aggregate into OHLCV bars
-    // Return historical data
-    //FAke for now Jo will handle this stuff
-    
-    Json(json!({
-        "s": "ok",
-        "t": [1699000000, 1699003600, 1699007200],
-        "o": [43100, 43250, 43200],
-        "h": [43300, 43500, 43400],
-        "l": [43050, 43200, 43150],
-        "c": [43250, 43400, 43300],
-        "v": [1500, 1200, 1800]
-    }))
+    // Map TradingView resolution to our TimescaleDB view names
+    let view_name = match params.resolution.as_str() {
+        "1" => "one_minute_candles",
+        "5" => "five_minutes_candles",
+        "15" => "fifteen_minutes_candles",
+        "30" => "thirty_minutes_candles",
+        "60" => "one_hour_candles",
+        "240" => "four_hours_candles",
+        "1D" | "D" => "one_day_candles",
+        "1W" | "W" => "one_week_candles",
+        "1M" | "M" => "one_month_candles",
+        _ => {
+            return Json(json!({
+                "s": "error",
+                "errmsg": format!("Unsupported resolution: {}", params.resolution)
+            }));
+        }
+    };
+
+    // Limit bars to prevent abuse (TradingView typically requests 300-5000 bars)
+    const MAX_BARS: i64 = 10000;
+
+    // Query the TimescaleDB view
+    // Note: bucket is a timestamp, open/high/low/close are NUMERIC, volume is NUMERIC
+    // Using parameterized queries to prevent SQL injection (view_name is validated via match)
+    let query = format!(
+        "SELECT
+            EXTRACT(EPOCH FROM bucket)::bigint as time,
+            open::float8 as open,
+            high::float8 as high,
+            low::float8 as low,
+            close::float8 as close,
+            volume::float8 as volume
+        FROM {}
+        WHERE symbol = $1
+            AND bucket >= to_timestamp($2)
+            AND bucket < to_timestamp($3)
+        ORDER BY bucket ASC
+        LIMIT $4",
+        view_name
+    );
+
+    match sqlx::query_as::<_, (i64, f64, f64, f64, f64, f64)>(&query)
+        .bind(&params.symbol)
+        .bind(params.from)
+        .bind(params.to)
+        .bind(MAX_BARS)
+        .fetch_all(&pool)
+        .await
+    {
+        Ok(rows) => {
+            if rows.is_empty() {
+                // No data available for this range
+                Json(json!({
+                    "s": "no_data",
+                    "nextTime": params.from
+                }))
+            } else {
+                // Convert to TradingView UDF format
+                let mut times = Vec::new();
+                let mut opens = Vec::new();
+                let mut highs = Vec::new();
+                let mut lows = Vec::new();
+                let mut closes = Vec::new();
+                let mut volumes = Vec::new();
+
+                for (time, open, high, low, close, volume) in rows {
+                    times.push(time);
+                    opens.push(open);
+                    highs.push(high);
+                    lows.push(low);
+                    closes.push(close);
+                    volumes.push(volume);
+                }
+
+                Json(json!({
+                    "s": "ok",
+                    "t": times,
+                    "o": opens,
+                    "h": highs,
+                    "l": lows,
+                    "c": closes,
+                    "v": volumes
+                }))
+            }
+        }
+        Err(e) => {
+            eprintln!("❌ Database error in udf_bars: {}", e);
+            Json(json!({
+                "s": "error",
+                "errmsg": format!("Database error: {}", e)
+            }))
+        }
+    }
 }
 
 
 //finally the depth, i think this is not part of trading view but keeping it regardlesss
 pub async fn udf_depth(
-    Query(_params): Query<DepthQuery>,
+    Query(params): Query<DepthQuery>,
     State((orderbook, _pool)): State<AppState>,
 ) -> impl IntoResponse {
     let ob = orderbook.lock().await;

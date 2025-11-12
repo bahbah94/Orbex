@@ -1,6 +1,7 @@
 use anyhow::Result;
 use sqlx::PgPool;
 use tracing::info;
+use crate::indexer::candle_aggregator::CandleAggregator;
 
 // TODO: This should come from the event
 // I'm using a placeholder for now
@@ -9,6 +10,7 @@ const SYMBOL: &str = "ETH/USDC";
 /// Parse TradeExecuted event and insert into trades table
 pub async fn process_trade(
     pool: &PgPool,
+    candle_agg: &mut CandleAggregator,
     trade_id: u64,
     block_number: u32,
     buy_order_id: u64,
@@ -46,6 +48,11 @@ pub async fn process_trade(
         "✅ Trade #{} inserted: {} → {} | Price: {} | Qty: {}",
         trade_id, buyer, seller, price, quantity
     );
+
+    // Update candles and broadcast to websocket subscribers
+    // Use current timestamp in milliseconds
+    let timestamp_ms = chrono::Utc::now().timestamp_millis();
+    candle_agg.process_trade(SYMBOL, price, quantity, timestamp_ms)?;
 
     Ok(())
 }

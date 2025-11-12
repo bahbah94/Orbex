@@ -7,13 +7,15 @@ use sqlx::PgPool;
 use subxt::{OnlineClient, PolkadotConfig};
 use tracing::{info, debug};
 use subxt::ext::scale_value::{Value, Composite,Primitive};
-use crate::order_extractor::*;
-use crate::orderbook_reducer::{OrderbookState, OrderInfo};
+use crate::indexer::order_extractor::*;
+use crate::indexer::orderbook_reducer::{OrderbookState, OrderInfo};
+use crate::indexer::candle_aggregator::CandleAggregator;
 
 pub async fn start(
-    node_url: &str, 
+    node_url: &str,
     pool: PgPool,
-    orderbook_state: Arc<Mutex<OrderbookState>>) -> Result<()> {
+    orderbook_state: Arc<Mutex<OrderbookState>>,
+    candle_aggregator: Arc<Mutex<CandleAggregator>>) -> Result<()> {
     let api = OnlineClient::<PolkadotConfig>::from_url(node_url).await?;
     
     info!("✅ Connected to chain: {:?}", api.runtime_version());
@@ -47,14 +49,15 @@ pub async fn start(
                     println!("🎯 TradeExecuted event detected!");
                     //println!("Raw event_values: {:?}", event_values);
 
-                    
+
                     // wrapping it for completeness and consistency
                     let value = Value {
                         value: subxt::ext::scale_value::ValueDef::Composite(event_values.clone()),
                         context: 0,
                     };
                     //println!("Event values: {:#?}", event_values);
-                    match parse_and_insert_trade(&pool, block_number, &value).await {
+                    let mut candle_agg = candle_aggregator.lock().await;
+                    match parse_and_insert_trade(&pool, &mut candle_agg, block_number, &value).await {
                         Ok(_) => {
                             println!("✅ Trade inserted successfully!");
                             info!("✅ Trade executed in block {}", block_number);
@@ -148,6 +151,7 @@ pub async fn start(
 
 async fn parse_and_insert_trade(
     pool: &PgPool,
+    candle_agg: &mut CandleAggregator,
     block_number: u32,
     event_values: &Value<u32>,
 ) -> Result<()> {
@@ -182,6 +186,12 @@ async fn parse_and_insert_trade(
     .bind(value as i64).execute(pool).await?;
 
     info!("✅ Trade #{} inserted into database!", trade_id);
+
+    // Update candles and broadcast to websocket subscribers
+    // TODO: Extract symbol from event instead of hardcoding
+    const SYMBOL: &str = "ETH/USDC";
+    let timestamp_ms = chrono::Utc::now().timestamp_millis();
+    candle_agg.process_trade(SYMBOL, price, quantity, timestamp_ms)?;
 
     Ok(())
 }

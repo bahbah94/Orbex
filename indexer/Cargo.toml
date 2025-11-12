@@ -39,9 +39,11 @@ hex = "0.4.3"
 # prometheus = "0.13"
 
 # Axum/backend server
-axum = "0.8.6"
+axum = { version = "0.8.6", features = ["ws"] }
 tower ="0.5.2"
 tower-http = {version = "0.6.6", features = ["cors"]}
+futures = "0.3"
+chrono = "0.4"
 
 [dev-dependencies]
 tokio-test = "0.4"
