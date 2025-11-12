@@ -1,18 +1,18 @@
 use anyhow::Result;
 use dotenv::dotenv;
 use std::env;
-use tracing::info;
 use tokio::sync::broadcast;
+use tracing::info;
 
+mod api;
 mod db;
 mod indexer;
-mod api;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use indexer::orderbook_reducer::OrderbookState;
 use indexer::candle_aggregator::{CandleAggregator, CandleUpdate};
+use indexer::orderbook_reducer::OrderbookState;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -33,13 +33,17 @@ async fn main() -> Result<()> {
     info!("📊 Connecting to database...");
     let pool = db::init_pool(&db_url).await?;
 
-    info!("📈 Initializing orderbook state...");
-    let orderbook_state = Arc::new(Mutex::new(OrderbookState::new()));
+    // Create broadcast channels for push-based updates
+    info!("📊 Initializing broadcast channels...");
 
-    // Create broadcast channel for OHLCV updates
-    // Buffer of 1000 allows clients to lag behind without dropping messages
-    info!("📊 Initializing candle broadcast channel...");
+    // Orderbook update channel
+    let (ob_tx, _) = broadcast::channel::<indexer::orderbook_reducer::OrderbookUpdateEvent>(1000);
+
+    // OHLCV update channel
     let (candle_tx, _) = broadcast::channel::<CandleUpdate>(1000);
+
+    info!("📈 Initializing orderbook state with broadcast...");
+    let orderbook_state = Arc::new(Mutex::new(OrderbookState::with_broadcast(ob_tx.clone())));
 
     // Initialize candle aggregator
     let candle_aggregator = Arc::new(Mutex::new(CandleAggregator::new(candle_tx.clone())));
@@ -47,12 +51,20 @@ async fn main() -> Result<()> {
     // Clone for API server
     let orderbook_for_api = orderbook_state.clone();
     let pool_for_api = pool.clone();
+    let ob_tx_for_api = ob_tx.clone();
     let candle_tx_for_api = candle_tx.clone();
 
     // Start API server in background
     info!("🌐 Starting API server...");
     tokio::spawn(async move {
-        if let Err(e) = api::server::run_server(orderbook_for_api, pool_for_api, candle_tx_for_api).await {
+        if let Err(e) = api::server::run_server(
+            orderbook_for_api,
+            pool_for_api,
+            ob_tx_for_api,
+            candle_tx_for_api,
+        )
+        .await
+        {
             eprintln!("❌ API server error: {}", e);
         }
     });

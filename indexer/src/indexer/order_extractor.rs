@@ -1,5 +1,5 @@
 use anyhow::Result;
-use subxt::ext::scale_value::{Value, Composite, Primitive};
+use subxt::ext::scale_value::{Composite, Primitive, Value};
 
 // ============================================
 // Data structures for events
@@ -145,7 +145,9 @@ pub fn extract_order_partially_filled(
             remaining_quantity,
         })
     } else {
-        Err(anyhow::anyhow!("OrderPartiallyFilled: Not a named composite"))
+        Err(anyhow::anyhow!(
+            "OrderPartiallyFilled: Not a named composite"
+        ))
     }
 }
 
@@ -185,7 +187,10 @@ fn extract_u128_from_value(value: &Value<u32>) -> Result<u128> {
     if let subxt::ext::scale_value::ValueDef::Primitive(Primitive::U128(val)) = &value.value {
         Ok(*val)
     } else {
-        Err(anyhow::anyhow!("Expected u128 primitive, got {:?}", value.value))
+        Err(anyhow::anyhow!(
+            "Expected u128 primitive, got {:?}",
+            value.value
+        ))
     }
 }
 
@@ -194,7 +199,10 @@ fn extract_u32_from_value(value: &Value<u32>) -> Result<u32> {
     if let subxt::ext::scale_value::ValueDef::Primitive(Primitive::U128(val)) = &value.value {
         Ok(*val as u32)
     } else {
-        Err(anyhow::anyhow!("Expected u128 primitive (for u32), got {:?}", value.value))
+        Err(anyhow::anyhow!(
+            "Expected u128 primitive (for u32), got {:?}",
+            value.value
+        ))
     }
 }
 
@@ -204,7 +212,10 @@ fn extract_side_variant(value: &Value<u32>) -> Result<String> {
     if let subxt::ext::scale_value::ValueDef::Variant(variant) = &value.value {
         Ok(variant.name.clone())
     } else {
-        Err(anyhow::anyhow!("Expected Variant for side, got {:?}", value.value))
+        Err(anyhow::anyhow!(
+            "Expected Variant for side, got {:?}",
+            value.value
+        ))
     }
 }
 
@@ -214,8 +225,7 @@ fn extract_side_variant(value: &Value<u32>) -> Result<String> {
 ///     Composite(Unnamed([U128, U128, ..., U128])) <- 32 bytes
 /// ]))
 fn extract_account_from_value(value: &Value<u32>) -> Result<String> {
-    if let subxt::ext::scale_value::ValueDef::Composite(Composite::Unnamed(outer)) = &value.value
-    {
+    if let subxt::ext::scale_value::ValueDef::Composite(Composite::Unnamed(outer)) = &value.value {
         if let Some(first) = outer.first() {
             if let subxt::ext::scale_value::ValueDef::Composite(Composite::Unnamed(bytes)) =
                 &first.value

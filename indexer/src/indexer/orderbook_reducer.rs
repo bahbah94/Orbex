@@ -1,16 +1,28 @@
 use anyhow::Result;
 use sqlx::PgPool;
-use tracing_subscriber::filter::combinator::Or;
 use std::collections::BTreeMap;
+use tokio::sync::broadcast;
 use tracing::info;
+use tracing_subscriber::filter::combinator::Or;
 
-pub struct OrderbookState{
-    pub bids: BTreeMap<u128,Vec<u64>>,
-    pub asks: BTreeMap<u128, Vec<u64>>,
-    pub orders: BTreeMap<u64, OrderInfo>
+/// Update event for orderbook changes
+#[derive(Debug, Clone)]
+pub enum OrderbookUpdateEvent {
+    OrderPlaced,
+    OrderCancelled,
+    OrderFilled,
+    OrderPartiallyFilled,
 }
 
-pub struct OrderInfo{
+pub struct OrderbookState {
+    pub bids: BTreeMap<u128, Vec<u64>>,
+    pub asks: BTreeMap<u128, Vec<u64>>,
+    pub orders: BTreeMap<u64, OrderInfo>,
+    /// Optional broadcast channel for push-based updates
+    broadcast_tx: Option<broadcast::Sender<OrderbookUpdateEvent>>,
+}
+
+pub struct OrderInfo {
     pub order_id: u64,
     //pub trade: String,
     pub side: String,
@@ -20,25 +32,50 @@ pub struct OrderInfo{
     pub status: String,
 }
 
-impl OrderbookState{
-    pub fn new() -> Self{
-        Self { bids: BTreeMap::new(),
-             asks: BTreeMap::new(),
+impl OrderbookState {
+    pub fn new() -> Self {
+        Self {
+            bids: BTreeMap::new(),
+            asks: BTreeMap::new(),
             orders: BTreeMap::new(),
-         }
+            broadcast_tx: None,
+        }
     }
 
-    pub fn add_order(&mut self, order:OrderInfo) {
+    /// Create a new OrderbookState with broadcast channel for push-based updates
+    pub fn with_broadcast(broadcast_tx: broadcast::Sender<OrderbookUpdateEvent>) -> Self {
+        Self {
+            bids: BTreeMap::new(),
+            asks: BTreeMap::new(),
+            orders: BTreeMap::new(),
+            broadcast_tx: Some(broadcast_tx),
+        }
+    }
+
+    /// Notify subscribers of orderbook change
+    fn notify(&self, event: OrderbookUpdateEvent) {
+        if let Some(ref tx) = self.broadcast_tx {
+            let _ = tx.send(event);
+        }
+    }
+
+    pub fn add_order(&mut self, order: OrderInfo) {
         let order_id = order.order_id;
         let price = order.price;
         let side = order.side.as_str();
 
         match side {
             "Buy" => {
-                self.bids.entry(price).or_insert_with(Vec::new).push(order_id);
-            },
+                self.bids
+                    .entry(price)
+                    .or_insert_with(Vec::new)
+                    .push(order_id);
+            }
             "Sell" => {
-                self.asks.entry(price).or_insert_with(Vec::new).push(order_id);
+                self.asks
+                    .entry(price)
+                    .or_insert_with(Vec::new)
+                    .push(order_id);
             }
             _ => {}
         }
@@ -46,6 +83,7 @@ impl OrderbookState{
         self.orders.insert(order_id, order);
 
         info!("Added order with order_id {}", order_id);
+        self.notify(OrderbookUpdateEvent::OrderPlaced);
     }
 
     pub fn update_order(
@@ -59,38 +97,39 @@ impl OrderbookState{
             order.status = status.to_string();
             (order.side.clone(), order.price)
         } else {
-            return Err(anyhow::anyhow!("Order #{} not found", order_id));  // ← Error!
+            return Err(anyhow::anyhow!("Order #{} not found", order_id)); // ← Error!
         };
-    
+
         if status == "Filled" {
             self.remove_order_from_level(order_id, &side, price);
+            self.notify(OrderbookUpdateEvent::OrderFilled);
+        } else if status == "PartiallyFilled" {
+            self.notify(OrderbookUpdateEvent::OrderPartiallyFilled);
         }
 
         Ok(())
     }
 
-    pub fn remove_order_from_level(&mut self, order_id: u64, side: &str, price: u128){
+    pub fn remove_order_from_level(&mut self, order_id: u64, side: &str, price: u128) {
         match side {
             "Buy" => {
-                if let Some(orders) = self.bids.get_mut(&price){
+                if let Some(orders) = self.bids.get_mut(&price) {
                     orders.retain(|id| id != &order_id);
-                    if orders.is_empty(){
+                    if orders.is_empty() {
                         self.bids.remove(&price);
                     }
                 }
-            },
+            }
             "Sell" => {
-                if let Some(orders) = self.asks.get_mut(&price){
+                if let Some(orders) = self.asks.get_mut(&price) {
                     orders.retain(|id| id != &order_id);
-                    if orders.is_empty(){
+                    if orders.is_empty() {
                         self.asks.remove(&price);
                     }
                 }
-            },
+            }
             _ => {}
         }
-
-        
     }
 
     pub fn cancel_order(&mut self, order_id: u64) -> Result<()> {
@@ -100,10 +139,11 @@ impl OrderbookState{
         } else {
             return Err(anyhow::anyhow!("Order #{} not found", order_id));
         };
-    
+
         self.remove_order_from_level(order_id, &side, price);
         info!(" Order #{} cancelled", order_id);
-    
+        self.notify(OrderbookUpdateEvent::OrderCancelled);
+
         Ok(())
     }
 
@@ -132,22 +172,15 @@ impl OrderbookState{
     }
 }
 
-pub async fn process_order_filled(
-    state: &mut OrderbookState,
-    order_id: u64
-) -> Result<()> {
+pub async fn process_order_filled(state: &mut OrderbookState, order_id: u64) -> Result<()> {
     if let Some(order) = state.orders.get(&order_id) {
         state.update_order(order_id, order.filled_quantity, "Filled")?;
         info!("OrderFilled: {}", order_id);
     }
     Ok(())
-    
 }
 
-pub async fn process_order_cancelled(
-    state: &mut OrderbookState,
-    order_id: u64,
-) -> Result<()> {
+pub async fn process_order_cancelled(state: &mut OrderbookState, order_id: u64) -> Result<()> {
     state.cancel_order(order_id)?;
     info!("Order {} Cancelled", order_id);
 
@@ -174,7 +207,7 @@ pub async fn process_order_place(
     order_id: u64,
     side: &str,
     price: u128,
-    quantity: u128
+    quantity: u128,
 ) -> Result<()> {
     let order = OrderInfo {
         order_id,
@@ -205,7 +238,7 @@ pub fn get_orderbook_snapshot(state: &OrderbookState) -> serde_json::Value {
                 .iter()
                 .filter_map(|id| state.orders.get(id).map(|o| o.quantity - o.filled_quantity))
                 .sum();
-            
+
             serde_json::json!({
                 "price": price,
                 "count": orders.len(),
@@ -232,7 +265,7 @@ pub fn get_orderbook_snapshot(state: &OrderbookState) -> serde_json::Value {
                 .iter()
                 .filter_map(|id| state.orders.get(id).map(|o| o.quantity - o.filled_quantity))
                 .sum();
-            
+
             serde_json::json!({
                 "price": price,
                 "count": orders.len(),
@@ -251,10 +284,8 @@ pub fn get_orderbook_snapshot(state: &OrderbookState) -> serde_json::Value {
         })
         .collect();
 
-    let (total_bid_volume, total_ask_volume): (u128, u128) = state
-        .orders
-        .values()
-        .fold((0, 0), |(bids, asks), order| {
+    let (total_bid_volume, total_ask_volume): (u128, u128) =
+        state.orders.values().fold((0, 0), |(bids, asks), order| {
             let remaining = order.quantity.saturating_sub(order.filled_quantity);
             if order.side == "Buy" {
                 (bids.saturating_add(remaining), asks)
@@ -267,8 +298,8 @@ pub fn get_orderbook_snapshot(state: &OrderbookState) -> serde_json::Value {
         "bids": bids,
         "asks": asks,
         "spread": if let Some((bid, ask)) = state.get_spread() {
-            serde_json::json!({ 
-                "best_bid": bid, 
+            serde_json::json!({
+                "best_bid": bid,
                 "best_ask": ask,
                 "spread": ask.saturating_sub(bid)
             })

@@ -1,7 +1,7 @@
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::broadcast;
-use anyhow::Result;
 
 /// TradingView-compatible Bar format
 /// https://www.tradingview.com/charting-library-docs/latest/api/interfaces/Charting_Library.Bar
@@ -47,7 +47,13 @@ impl Candle {
 }
 
 impl Candle {
-    pub fn new(symbol: String, timeframe: String, price: u128, quantity: u128, timestamp: i64) -> Self {
+    pub fn new(
+        symbol: String,
+        timeframe: String,
+        price: u128,
+        quantity: u128,
+        timestamp: i64,
+    ) -> Self {
         Self {
             symbol,
             timeframe,
@@ -112,13 +118,13 @@ impl CandleAggregator {
     pub fn new(broadcast_tx: broadcast::Sender<CandleUpdate>) -> Self {
         // Define supported timeframes
         let timeframes = vec![
-            ("1m".to_string(), 60_000),          // 1 minute
-            ("5m".to_string(), 300_000),         // 5 minutes
-            ("15m".to_string(), 900_000),        // 15 minutes
-            ("30m".to_string(), 1_800_000),      // 30 minutes
-            ("1h".to_string(), 3_600_000),       // 1 hour
-            ("4h".to_string(), 14_400_000),      // 4 hours
-            ("1d".to_string(), 86_400_000),      // 1 day
+            ("1m".to_string(), 60_000),     // 1 minute
+            ("5m".to_string(), 300_000),    // 5 minutes
+            ("15m".to_string(), 900_000),   // 15 minutes
+            ("30m".to_string(), 1_800_000), // 30 minutes
+            ("1h".to_string(), 3_600_000),  // 1 hour
+            ("4h".to_string(), 14_400_000), // 4 hours
+            ("1d".to_string(), 86_400_000), // 1 day
         ];
 
         Self {
@@ -149,7 +155,9 @@ impl CandleAggregator {
                     } else {
                         // Candle closed, broadcast the closed candle first
                         let closed_candle = candle.clone();
-                        let _ = self.broadcast_tx.send(CandleUpdate::from_candle(&closed_candle, true));
+                        let _ = self
+                            .broadcast_tx
+                            .send(CandleUpdate::from_candle(&closed_candle, true));
 
                         // Start new candle
                         *candle = Candle::new(
@@ -177,7 +185,9 @@ impl CandleAggregator {
 
             // Broadcast updated candle
             if let Some(candle) = self.current_candles.get(&key) {
-                let _ = self.broadcast_tx.send(CandleUpdate::from_candle(candle, is_closed));
+                let _ = self
+                    .broadcast_tx
+                    .send(CandleUpdate::from_candle(candle, is_closed));
             }
         }
 
@@ -186,7 +196,8 @@ impl CandleAggregator {
 
     /// Get current candle for a symbol/timeframe (useful for initial snapshot)
     pub fn get_current_candle(&self, symbol: &str, timeframe: &str) -> Option<&Candle> {
-        self.current_candles.get(&(symbol.to_string(), timeframe.to_string()))
+        self.current_candles
+            .get(&(symbol.to_string(), timeframe.to_string()))
     }
 
     /// Get all current candles for a symbol

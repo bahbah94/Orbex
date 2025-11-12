@@ -1,22 +1,22 @@
+use crate::indexer::orderbook_reducer::OrderbookState;
 use axum::{
-    extract::{State, Query},
-    response::{IntoResponse, Json},
+    extract::{Query, State},
     http::StatusCode,
+    response::{IntoResponse, Json},
     routing::get,
     Router,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use sqlx::PgPool;
-use crate::indexer::orderbook_reducer::OrderbookState;
 
 pub type AppState = (Arc<Mutex<OrderbookState>>, PgPool);
 
 const EXCHANGE: &str = "Polkadex";
 const TIMEZONE: &str = "UTC";
-const SYMBOL: &str = "ETH/USDC";  // Your symbol
+const SYMBOL: &str = "ETH/USDC"; // Your symbol
 const SUPPORTED_RESOLUTIONS: &[&str] = &["1", "5", "15", "30", "60", "240", "1D", "1W", "1M"];
 
 #[derive(Debug, Deserialize)]
@@ -49,7 +49,6 @@ pub struct HistoryQuery {
     pub resolution: String,
 }
 
-
 pub async fn udf_config() -> impl IntoResponse {
     Json(json!({
         "supported_resolutions":SUPPORTED_RESOLUTIONS,
@@ -64,14 +63,21 @@ pub async fn udf_quotes(
     Query(_params): Query<QuoteQuery>,
     State((orderbook, _pool)): State<AppState>,
 ) -> impl IntoResponse {
-
     let ob = orderbook.lock().await;
-    match ob.get_spread(){
-        Some ((best_bid, best_ask)) =>{
+    match ob.get_spread() {
+        Some((best_bid, best_ask)) => {
             // Get order counts at best levels
-            let bid_orders = ob.bids.get(&best_bid).map(|orders| orders.len()).unwrap_or(0);
+            let bid_orders = ob
+                .bids
+                .get(&best_bid)
+                .map(|orders| orders.len())
+                .unwrap_or(0);
 
-            let ask_orders = ob.asks.get(&best_ask).map(|orders| orders.len()).unwrap_or(0);
+            let ask_orders = ob
+                .asks
+                .get(&best_ask)
+                .map(|orders| orders.len())
+                .unwrap_or(0);
 
             let spread = best_ask.saturating_sub(best_bid);
             let mid_price = (best_bid.saturating_add(best_ask)) / 2;
@@ -88,28 +94,23 @@ pub async fn udf_quotes(
                 "timestamp": chrono::Utc::now().timestamp_millis(),
             }))
         }
-        None => {
-            Json(json!({
-                "s": "error",
-                "errmsg": "No liquidity available"
-            }))
-        }  
+        None => Json(json!({
+            "s": "error",
+            "errmsg": "No liquidity available"
+        })),
     }
 }
 
-
 // udf search
 pub async fn udf_search() -> impl IntoResponse {
-    Json(vec![
-        json!({
-            "symbol": SYMBOL,
-            "full_name": "Ethereum / USDC",
-            "description": "Ethereum",
-            "exchange": EXCHANGE,
-            "type": "crypto",
-            "ticker": "ETHUSDC"
-        })
-    ])
+    Json(vec![json!({
+        "symbol": SYMBOL,
+        "full_name": "Ethereum / USDC",
+        "description": "Ethereum",
+        "exchange": EXCHANGE,
+        "type": "crypto",
+        "ticker": "ETHUSDC"
+    })])
 }
 
 //time
@@ -269,7 +270,6 @@ pub async fn udf_bars(
     }
 }
 
-
 //finally the depth, i think this is not part of trading view but keeping it regardlesss
 pub async fn udf_depth(
     Query(params): Query<DepthQuery>,
@@ -291,18 +291,17 @@ pub async fn udf_depth(
                 .unwrap_or(&vec![])
                 .iter()
                 .filter_map(|id| {
-                    ob.orders.get(id).map(|o| {
-                        o.quantity.saturating_sub(o.filled_quantity)
-                    })
+                    ob.orders
+                        .get(id)
+                        .map(|o| o.quantity.saturating_sub(o.filled_quantity))
                 })
                 .sum();
 
             vec![json!(price), json!(count), json!(qty)]
         })
         .collect();
-    
 
-        let asks: Vec<Vec<Value>> = ask_levels
+    let asks: Vec<Vec<Value>> = ask_levels
         .iter()
         .map(|(price, count)| {
             // Calculate total quantity at this price level
@@ -312,18 +311,15 @@ pub async fn udf_depth(
                 .unwrap_or(&vec![])
                 .iter()
                 .filter_map(|id| {
-                    ob.orders.get(id).map(|o| {
-                        o.quantity.saturating_sub(o.filled_quantity)
-                    })
+                    ob.orders
+                        .get(id)
+                        .map(|o| o.quantity.saturating_sub(o.filled_quantity))
                 })
                 .sum();
 
             vec![json!(price), json!(count), json!(qty)]
         })
         .collect();
-
-
-
 
     Json(json!({
         "s": "ok",

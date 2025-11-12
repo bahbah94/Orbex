@@ -2,26 +2,27 @@ use std::result;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use crate::indexer::candle_aggregator::CandleAggregator;
+use crate::indexer::order_extractor::*;
+use crate::indexer::orderbook_reducer::{OrderInfo, OrderbookState};
 use anyhow::Result;
 use sqlx::PgPool;
+use subxt::ext::scale_value::{Composite, Primitive, Value};
 use subxt::{OnlineClient, PolkadotConfig};
-use tracing::{info, debug};
-use subxt::ext::scale_value::{Value, Composite,Primitive};
-use crate::indexer::order_extractor::*;
-use crate::indexer::orderbook_reducer::{OrderbookState, OrderInfo};
-use crate::indexer::candle_aggregator::CandleAggregator;
+use tracing::{debug, info};
 
 pub async fn start(
     node_url: &str,
     pool: PgPool,
     orderbook_state: Arc<Mutex<OrderbookState>>,
-    candle_aggregator: Arc<Mutex<CandleAggregator>>) -> Result<()> {
+    candle_aggregator: Arc<Mutex<CandleAggregator>>,
+) -> Result<()> {
     let api = OnlineClient::<PolkadotConfig>::from_url(node_url).await?;
-    
+
     info!("✅ Connected to chain: {:?}", api.runtime_version());
 
     let mut blocks = api.blocks().subscribe_finalized().await?;
-    
+
     info!("📡 Listening for events...");
 
     while let Some(block) = blocks.next().await {
@@ -49,7 +50,6 @@ pub async fn start(
                     println!("🎯 TradeExecuted event detected!");
                     //println!("Raw event_values: {:?}", event_values);
 
-
                     // wrapping it for completeness and consistency
                     let value = Value {
                         value: subxt::ext::scale_value::ValueDef::Composite(event_values.clone()),
@@ -57,44 +57,50 @@ pub async fn start(
                     };
                     //println!("Event values: {:#?}", event_values);
                     let mut candle_agg = candle_aggregator.lock().await;
-                    match parse_and_insert_trade(&pool, &mut candle_agg, block_number, &value).await {
+                    match parse_and_insert_trade(&pool, &mut candle_agg, block_number, &value).await
+                    {
                         Ok(_) => {
                             println!("✅ Trade inserted successfully!");
                             info!("✅ Trade executed in block {}", block_number);
-                        },
+                        }
                         Err(e) => {
-                            println!("❌ FAILED TO INSERT TRADE: {}", e);  // ← THIS WILL SHOW THE ERROR
+                            println!("❌ FAILED TO INSERT TRADE: {}", e); // ← THIS WILL SHOW THE ERROR
                             debug!("❌ Failed to parse trade: {}", e);
                         }
                     }
-                },
+                }
                 ("Orderbook", "OrderPlaced") => {
                     info!("📦 Order placed in block {}", block_number);
                     //println!("Full event_values: {:#?}", event_values);
                     match extract_order_placed(&event_values) {
                         Ok(data) => {
-                            println!("📦 OrderPlaced: id={}, side={}, price={}, qty={}", 
-                                data.order_id, data.side, data.price, data.quantity);
-                                let mut state = orderbook_state.lock().await;
-                                let order = OrderInfo {
-                                    order_id: data.order_id as u64,
-                                    side: data.side,
-                                    price: data.price,
-                                    quantity: data.quantity,
-                                    filled_quantity: 0,
-                                    status: "Open".to_string(),
-                                };
-                                state.add_order(order);
-                                info!("✅ Order #{} added to state", data.order_id);
-                            }
+                            println!(
+                                "📦 OrderPlaced: id={}, side={}, price={}, qty={}",
+                                data.order_id, data.side, data.price, data.quantity
+                            );
+                            let mut state = orderbook_state.lock().await;
+                            let order = OrderInfo {
+                                order_id: data.order_id as u64,
+                                side: data.side,
+                                price: data.price,
+                                quantity: data.quantity,
+                                filled_quantity: 0,
+                                status: "Open".to_string(),
+                            };
+                            state.add_order(order);
+                            info!("✅ Order #{} added to state", data.order_id);
+                        }
                         Err(e) => println!("❌ Failed to parse orderplaced: {}", e),
                     }
-                },
+                }
                 ("Orderbook", "OrderCancelled") => {
                     info!("❌ Order cancelled in block {}", block_number);
                     match extract_order_cancelled(&event_values) {
                         Ok(data) => {
-                            println!("❌ OrderCancelled: id={}, trader={}", data.order_id, data.trader);
+                            println!(
+                                "❌ OrderCancelled: id={}, trader={}",
+                                data.order_id, data.trader
+                            );
 
                             let mut state = orderbook_state.lock().await;
                             let _ = state.cancel_order(data.order_id as u64);
@@ -102,18 +108,23 @@ pub async fn start(
                         }
                         Err(e) => println!("❌ Failed to parse orderCancelled: {}", e),
                     }
-                },
+                }
                 ("Orderbook", "OrderFilled") => {
                     info!("✅ Order filled in block {}", block_number);
                     match extract_order_filled(&event_values) {
                         Ok(data) => {
-                            println!("✅ OrderFilled: id={}, trader={}", data.order_id, data.trader);
+                            println!(
+                                "✅ OrderFilled: id={}, trader={}",
+                                data.order_id, data.trader
+                            );
                             let mut state = orderbook_state.lock().await;
                             let quantity = {
-                                state.orders.get(&(data.order_id as u64))
+                                state
+                                    .orders
+                                    .get(&(data.order_id as u64))
                                     .map(|order| order.quantity)
                             };
-                            
+
                             // Now use the mutable state, doing this to fix clash of mut and immut borrow from before
                             if let Some(qty) = quantity {
                                 let _ = state.update_order(data.order_id as u64, qty, "Filled");
@@ -122,23 +133,32 @@ pub async fn start(
                         }
                         Err(e) => println!("❌ Failed to parse order filled: {}", e),
                     }
-                },
+                }
                 ("Orderbook", "OrderPartiallyFilled") => {
                     info!("📊 Order partially filled in block {}", block_number);
                     match extract_order_partially_filled(&event_values) {
                         Ok(data) => {
-                            println!("📊 OrderPartiallyFilled: id={}, filled={}, remaining={}", 
-                                data.order_id, data.filled_quantity, data.remaining_quantity);
-                            
+                            println!(
+                                "📊 OrderPartiallyFilled: id={}, filled={}, remaining={}",
+                                data.order_id, data.filled_quantity, data.remaining_quantity
+                            );
+
                             let mut state = orderbook_state.lock().await;
-                            let _ = state.update_order(data.order_id as u64, data.filled_quantity, "PartiallyFilled");
-                            info!("✅ Order #{} partially filled ({}/{})", 
-                                data.order_id, data.filled_quantity, data.filled_quantity + data.remaining_quantity);
+                            let _ = state.update_order(
+                                data.order_id as u64,
+                                data.filled_quantity,
+                                "PartiallyFilled",
+                            );
+                            info!(
+                                "✅ Order #{} partially filled ({}/{})",
+                                data.order_id,
+                                data.filled_quantity,
+                                data.filled_quantity + data.remaining_quantity
+                            );
                         }
                         Err(e) => println!("❌ Failed: {}", e),
                     }
-            
-                },
+                }
                 _ => {
                     // Ignore events from other pallets
                 }
@@ -173,7 +193,7 @@ async fn parse_and_insert_trade(
     sqlx::query(
         "INSERT INTO trades
         (trade_id, block_number,buy_order_id,sell_order_id,buyer,seller,price,quantity,value)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)"
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
     )
     .bind(trade_id as i64)
     .bind(block_number as i64)
@@ -183,7 +203,9 @@ async fn parse_and_insert_trade(
     .bind(seller.clone())
     .bind(price as i64)
     .bind(quantity as i64)
-    .bind(value as i64).execute(pool).await?;
+    .bind(value as i64)
+    .execute(pool)
+    .await?;
 
     info!("✅ Trade #{} inserted into database!", trade_id);
 
@@ -201,7 +223,8 @@ fn extract_u128_by_name(value: &Value<u32>, field_name: &str) -> Result<u128> {
     if let subxt::ext::scale_value::ValueDef::Composite(Composite::Named(fields)) = &value.value {
         for (name, field_value) in fields {
             if name == field_name {
-                if let subxt::ext::scale_value::ValueDef::Primitive(Primitive::U128(val)) = &field_value.value
+                if let subxt::ext::scale_value::ValueDef::Primitive(Primitive::U128(val)) =
+                    &field_value.value
                 {
                     return Ok(*val);
                 }
@@ -242,8 +265,10 @@ fn extract_account_by_name(value: &Value<u32>, field_name: &str) -> Result<Strin
             }
         }
     }
-    Err(anyhow::anyhow!("Field {} not found or invalid account", field_name))
+    Err(anyhow::anyhow!(
+        "Field {} not found or invalid account",
+        field_name
+    ))
 }
-
 
 // Please refer to event_type_ref for understanding these reference types

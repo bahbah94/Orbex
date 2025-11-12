@@ -1,12 +1,12 @@
+use crate::indexer::candle_aggregator::CandleUpdate;
+use axum::extract::ws::{Message, WebSocket};
 use axum::{
-    extract::{State, WebSocketUpgrade, Query},
+    extract::{Query, State, WebSocketUpgrade},
     response::IntoResponse,
 };
-use axum::extract::ws::{WebSocket, Message};
-use futures::{StreamExt, SinkExt};
+use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
-use crate::indexer::candle_aggregator::CandleUpdate;
 
 pub type OhlcvState = broadcast::Sender<CandleUpdate>;
 
@@ -52,13 +52,13 @@ pub async fn ws_ohlcv_handler(
     State(broadcast_tx): State<OhlcvState>,
 ) -> impl IntoResponse {
     let symbol_filter = params.symbol.unwrap_or_else(|| "ETH/USDC".to_string());
-    let timeframe_filter: Option<Vec<String>> = params.timeframes.map(|tf| {
-        tf.split(',')
-            .map(|s| s.trim().to_string())
-            .collect()
-    });
+    let timeframe_filter: Option<Vec<String>> = params
+        .timeframes
+        .map(|tf| tf.split(',').map(|s| s.trim().to_string()).collect());
 
-    ws.on_upgrade(move |socket| handle_ohlcv_socket(socket, broadcast_tx, symbol_filter, timeframe_filter))
+    ws.on_upgrade(move |socket| {
+        handle_ohlcv_socket(socket, broadcast_tx, symbol_filter, timeframe_filter)
+    })
 }
 
 async fn handle_ohlcv_socket(
@@ -72,7 +72,10 @@ async fn handle_ohlcv_socket(
     // Subscribe to broadcast channel
     let mut candle_rx = broadcast_tx.subscribe();
 
-    println!("📊 New OHLCV WebSocket connection for symbol: {}", symbol_filter);
+    println!(
+        "📊 New OHLCV WebSocket connection for symbol: {}",
+        symbol_filter
+    );
 
     // TODO: Send initial snapshot of current candles
     // This would require access to CandleAggregator to get current state

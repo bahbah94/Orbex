@@ -1,7 +1,7 @@
+use crate::indexer::candle_aggregator::CandleAggregator;
 use anyhow::Result;
 use sqlx::PgPool;
 use tracing::info;
-use crate::indexer::candle_aggregator::CandleAggregator;
 
 // TODO: This should come from the event
 // I'm using a placeholder for now
