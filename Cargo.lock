@@ -13799,6 +13799,7 @@ dependencies = [
  "anyhow",
  "dotenv",
  "flate2",
+ "futures",
  "serde",
  "serde_json",
  "subxt 0.37.0",

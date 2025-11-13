@@ -6,12 +6,10 @@ use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::sync::Arc;
-use std::time::Duration;
 use subxt::{OnlineClient, PolkadotConfig};
 use subxt::tx::PairSigner;
 use subxt::ext::sp_core::{sr25519::Pair, Pair as PairTrait, crypto::Ss58Codec};
-use tokio::sync::Mutex;
-use tokio::time::sleep;
+use tokio::sync::{Mutex, Semaphore};
 use tracing::{info, warn};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -53,11 +51,12 @@ use polkadot::runtime_types::pallet_orderbook::types::{OrderSide, OrderType};
 struct TradeBot {
     client: OnlineClient<PolkadotConfig>,
     accounts: Vec<(String, Pair)>,  // (address, keypair)
-    account_locks: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
+    account_locks: HashMap<String, Arc<Mutex<()>>>,  // Per-account locks
+    worker_pool: Arc<Semaphore>,  // Limits concurrent workers
 }
 
 impl TradeBot {
-    async fn new(node_url: &str, num_accounts: usize) -> Result<Self> {
+    async fn new(node_url: &str, num_accounts: usize, pool_size: usize) -> Result<Self> {
         let client = OnlineClient::<PolkadotConfig>::from_url(node_url)
             .await
             .context("Failed to connect to node")?;
@@ -72,10 +71,17 @@ impl TradeBot {
             info!("  - {}", addr);
         }
 
+        // Create a lock for each account upfront
+        let mut account_locks = HashMap::new();
+        for (addr, _) in &accounts {
+            account_locks.insert(addr.clone(), Arc::new(Mutex::new(())));
+        }
+
         Ok(Self {
             client,
             accounts,
-            account_locks: Arc::new(Mutex::new(HashMap::new())),
+            account_locks,
+            worker_pool: Arc::new(Semaphore::new(pool_size)),
         })
     }
 
@@ -122,11 +128,10 @@ impl TradeBot {
     ) -> Result<()> {
         let (address, pair) = self.map_trader_to_account(trader);
 
-        // Get or create a lock for this account
-        let account_lock = {
-            let mut locks = self.account_locks.lock().await;
-            locks.entry(address.clone()).or_insert_with(|| Arc::new(Mutex::new(()))).clone()
-        };
+        // Get the lock for this specific account (already created in new())
+        let account_lock = self.account_locks.get(address)
+            .expect("Account lock should exist")
+            .clone();
 
         // Acquire the lock for this account to ensure sequential transactions
         let _guard = account_lock.lock().await;
@@ -293,7 +298,7 @@ impl TradeBot {
         Ok(())
     }
 
-    async fn replay_transactions(&self, blocks: Vec<Block>) -> Result<()> {
+    async fn replay_transactions(self: Arc<Self>, blocks: Vec<Block>) -> Result<()> {
         // Flatten all transactions from all blocks into a single list
         let all_txs: Vec<Transaction> = blocks
             .into_iter()
@@ -301,19 +306,47 @@ impl TradeBot {
             .collect();
 
         info!("🚀 Starting transaction replay with {} transactions", all_txs.len());
+        info!("👷 Worker pool size: {}", self.worker_pool.available_permits());
 
+        let mut handles = Vec::new();
+
+        // Spawn a worker for each transaction
+        for tx in all_txs {
+            // Acquire a permit from the worker pool (blocks if pool is saturated)
+            let permit = self.worker_pool.clone().acquire_owned().await.unwrap();
+            let bot = self.clone();
+
+            // Spawn worker task
+            let handle = tokio::spawn(async move {
+                let result = bot.process_transaction(&tx).await;
+
+                // Log result
+                match &result {
+                    Ok(_) => {},
+                    Err(e) => {
+                        warn!("Failed to process tx {}: {}", tx.tx_id, e);
+                    }
+                }
+
+                // Permit is automatically released when dropped
+                drop(permit);
+                result
+            });
+
+            handles.push(handle);
+        }
+
+        // Wait for all workers to complete
+        info!("⏳ Waiting for all workers to complete...");
+        let results = futures::future::join_all(handles).await;
+
+        // Count results
         let mut submitted = 0;
         let mut failed = 0;
-
-        // Process all transactions sequentially with best effort
-        // Account-level locking ensures proper nonce management per account
-        for tx in &all_txs {
-            match self.process_transaction(tx).await {
-                Ok(_) => submitted += 1,
-                Err(e) => {
-                    warn!("Failed to process tx {}: {}", tx.tx_id, e);
-                    failed += 1;
-                }
+        for result in results {
+            match result {
+                Ok(Ok(_)) => submitted += 1,
+                _ => failed += 1,
             }
         }
 
@@ -371,16 +404,22 @@ async fn main() -> Result<()> {
         .parse::<usize>()
         .context("NUM_ACCOUNTS must be a valid number")?;
 
+    let worker_pool_size = env::var("WORKER_POOL_SIZE")
+        .unwrap_or_else(|_| "10".to_string())
+        .parse::<usize>()
+        .context("WORKER_POOL_SIZE must be a valid number")?;
+
     let blocks_file = env::var("BLOCKS_FILE")
         .unwrap_or_else(|_| "ETHUSDC_2025-11-12T22-08-37-339Z_synthetic_blocks.jsonl".to_string());
 
     info!("Configuration:");
     info!("  Node URL: {}", node_url);
     info!("  Num Accounts: {}", num_accounts);
+    info!("  Worker Pool Size: {}", worker_pool_size);
     info!("  Blocks File: {}", blocks_file);
 
     // Initialize trade bot
-    let bot = TradeBot::new(&node_url, num_accounts).await?;
+    let bot = TradeBot::new(&node_url, num_accounts, worker_pool_size).await?;
 
     // Load blocks from file
     let blocks = load_blocks(&blocks_file)?;
@@ -392,7 +431,10 @@ async fn main() -> Result<()> {
         info!("⏭️  Skipping account funding (SKIP_FUNDING=1)");
     }
 
-    // Replay all transactions with best effort
+    // Wrap bot in Arc for shared ownership across workers
+    let bot = Arc::new(bot);
+
+    // Replay all transactions with worker pool
     bot.replay_transactions(blocks).await?;
 
     info!("🎉 Trade bot completed successfully!");

@@ -32,6 +32,10 @@ cp .env.example .env
 - `NUM_ACCOUNTS` - Number of trading accounts to simulate (default: `6`)
   - Uses dev accounts: Alice, Bob, Charlie, Dave, Eve, Ferdie
   - If you need more than 6, accounts will wrap around
+- `WORKER_POOL_SIZE` - Maximum number of concurrent transaction workers (default: `10`)
+  - Controls how many transactions can be processed in parallel
+  - Higher values = more throughput but more load on the chain
+- `SKIP_FUNDING` - Set to `1` to skip account funding (default: `0`)
 - `BLOCKS_FILE` - Path to the synthetic blocks file
 - `RUST_LOG` - Logging level (trace, debug, info, warn, error)
 
@@ -64,11 +68,12 @@ cargo run --release
 1. **Account Generation**: Creates N trading accounts using Substrate dev keypairs (Alice, Bob, etc.)
 2. **Account Funding**: Automatically funds each account with 1 trillion ETH (asset 0) and 1 trillion USDC (asset 1)
 3. **Data Loading**: Loads synthetic blocks from the JSONL file and flattens all transactions into a single list
-4. **Transaction Replay**:
-   - Processes all transactions sequentially with best effort delivery
-   - Account-level locking ensures proper nonce management (one tx per account in flight at a time)
-   - Failures are logged but don't stop processing
-   - No waiting for finalization - just submit and continue
+4. **Worker Pool Architecture**:
+   - Spawns a worker for each transaction up to the pool size limit
+   - Workers process transactions concurrently across different accounts
+   - Per-account locks ensure proper nonce management (sequential txs per account)
+   - Waits for transaction finalization to avoid nonce conflicts
+   - Pool saturation prevents overwhelming the chain with too many concurrent requests
 5. **Order Mapping**: Deterministically maps synthetic trader addresses to real accounts using a hash function
 6. **Price/Quantity Conversion**: Converts floating-point prices/quantities to u128 with 6 decimal places
 
@@ -125,9 +130,12 @@ Generated 6 trading accounts:
 
 ## Performance Tuning
 
-- **Block Delay**: Adjust the delay between blocks in the code (currently 100ms)
-- **Concurrent Orders**: All orders within a block are submitted concurrently
+- **Worker Pool Size**: Adjust `WORKER_POOL_SIZE` to control concurrency (default: 10)
+  - Higher values = more throughput but more load on the chain
+  - Recommended: Start with pool size = 2-3x number of accounts
 - **Account Count**: Increase `NUM_ACCOUNTS` to distribute load across more accounts
+  - More accounts = less contention, better parallelism
+- **Chain Block Time**: The runtime is configured for 1-second block times (Aura consensus)
 
 ## Troubleshooting
 
@@ -149,5 +157,16 @@ Generated 6 trading accounts:
 To modify the bot behavior:
 
 - `place_order()` - Handles order submission logic
-- `replay_blocks()` - Controls block processing flow
+- `replay_transactions()` - Controls transaction processing flow with worker pool
 - `map_trader_to_account()` - Changes how traders map to accounts
+
+### Architecture Overview
+
+The bot uses a worker pool pattern for optimal throughput:
+
+1. Main loop spawns a worker task for each transaction
+2. Semaphore limits concurrent workers to `WORKER_POOL_SIZE`
+3. Each worker acquires a per-account lock before processing
+4. Transactions for the same account are sequential (proper nonce order)
+5. Transactions for different accounts run in parallel (maximum throughput)
+6. All workers are awaited at the end to ensure completion
