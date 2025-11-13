@@ -86,22 +86,45 @@ impl Candle {
     }
 }
 
-/// Update message sent over websocket
+/// Update message sent over websocket (Hyperliquid candle format)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CandleUpdate {
-    pub symbol: String,
-    pub timeframe: String,
-    pub bar: TvBar,
-    pub is_closed: bool, // true if this candle just closed and a new one started
+    /// End time in milliseconds
+    #[serde(rename = "T")]
+    pub end_time: i64,
+    /// Start time in milliseconds
+    pub t: i64,
+    /// Open price (as string to match Hyperliquid)
+    pub o: String,
+    /// High price
+    pub h: String,
+    /// Low price
+    pub l: String,
+    /// Close price
+    pub c: String,
+    /// Volume
+    pub v: String,
+    /// Interval/timeframe (e.g., "1m", "5m")
+    pub i: String,
+    /// Symbol
+    pub s: String,
+    /// Number of trades
+    pub n: u64,
 }
 
 impl CandleUpdate {
-    pub fn from_candle(candle: &Candle, is_closed: bool) -> Self {
+    pub fn from_candle(candle: &Candle, _is_closed: bool) -> Self {
         Self {
-            symbol: candle.symbol.clone(),
-            timeframe: candle.timeframe.clone(),
-            bar: candle.to_tv_bar(),
-            is_closed,
+            end_time: candle.close_time,
+            t: candle.open_time,
+            o: candle.open.to_string(),
+            h: candle.high.to_string(),
+            l: candle.low.to_string(),
+            c: candle.close.to_string(),
+            v: candle.volume.to_string(),
+            i: candle.timeframe.clone(),
+            s: candle.symbol.clone(),
+            n: candle.trade_count,
         }
     }
 }

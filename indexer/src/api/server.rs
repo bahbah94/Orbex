@@ -31,6 +31,7 @@ pub async fn run_server(
             "/api/orderbook",
             get(handlers::orderbook_hand::get_orderbook),
         )
+        .route("/api/candles", get(handlers::ohlcv_hand::get_candles))
         // .route("/api/order/:id", get(handlers::orderbook_hand::get_order))
         //add the udf stuff
         .nest("/udf", handlers::udf::udf_routes().await)
@@ -52,6 +53,7 @@ pub async fn run_server(
     println!("🔥 WebSocket (orderbook + OHLCV): ws://0.0.0.0:3000/ws/market");
     println!("📖 REST API:");
     println!("   - Orderbook: http://0.0.0.0:3000/api/orderbook");
+    println!("   - Candles: http://0.0.0.0:3000/api/candles");
     println!("   - UDF: http://0.0.0.0:3000/udf/");
 
     axum::serve(listener, app).await?;

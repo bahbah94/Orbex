@@ -150,28 +150,23 @@ async fn handle_unified_socket(
                 match candle_result {
                     Ok(update) => {
                         // Filter by symbol
-                        if update.symbol != symbol_filter {
+                        if update.s != symbol_filter {
                             continue;
                         }
 
                         // Filter by timeframe if specified
                         if let Some(ref timeframes) = timeframe_filter {
-                            if !timeframes.contains(&update.timeframe) {
+                            if !timeframes.contains(&update.i) {
                                 continue;
                             }
                         }
 
-                        // Send OHLCV update
-                        let message = MarketDataMessage::ohlcv(
-                            update.symbol.clone(),
-                            update.timeframe.clone(),
-                            update.bar.clone(),
-                            update.is_closed,
-                        );
+                        // Send candle update
+                        let message = MarketDataMessage::candle(update);
 
                         if let Ok(json) = serde_json::to_string(&message) {
                             if sender.send(Message::Text(json.into())).await.is_err() {
-                                println!("❌ Failed to send OHLCV update");
+                                error!("Failed to send candle update");
                                 break;
                             }
                         }

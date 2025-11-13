@@ -5,7 +5,8 @@ CREATE MATERIALIZED VIEW one_minute_candles_cs
 WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
 SELECT time_bucket('1 minute', created_at) AS bucket,
     symbol,
-    candlestick_agg(created_at, price, quantity) AS candlestick
+    candlestick_agg(created_at, price, quantity) AS candlestick,
+    COUNT(*) AS trade_count
 FROM trades
 GROUP BY 1, 2 WITH NO DATA;
 
@@ -21,14 +22,16 @@ CREATE VIEW one_minute_candles AS
         close(candlestick) AS close,
         close_time(candlestick) AS close_time,
         volume(candlestick) AS volume,
-        vwap(candlestick) AS vwap
+        vwap(candlestick) AS vwap,
+        trade_count
     FROM one_minute_candles_cs;
 
 CREATE MATERIALIZED VIEW five_minutes_candles_cs
 WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
 SELECT time_bucket('5 minutes', bucket) AS bucket,
     symbol,
-    rollup(candlestick) AS candlestick
+    rollup(candlestick) AS candlestick,
+    SUM(trade_count) AS trade_count
 FROM one_minute_candles_cs
 GROUP BY 1, 2 WITH NO DATA;
 
@@ -44,14 +47,16 @@ CREATE VIEW five_minutes_candles AS
         close(candlestick) AS close,
         close_time(candlestick) AS close_time,
         volume(candlestick) AS volume,
-        vwap(candlestick) AS vwap
+        vwap(candlestick) AS vwap,
+        trade_count
     FROM five_minutes_candles_cs;
 
 CREATE MATERIALIZED VIEW fifteen_minutes_candles_cs
 WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
 SELECT time_bucket('15 minutes', bucket) AS bucket,
     symbol,
-    rollup(candlestick) AS candlestick
+    rollup(candlestick) AS candlestick,
+    SUM(trade_count) AS trade_count
 FROM five_minutes_candles_cs
 GROUP BY 1, 2 WITH NO DATA;
 
@@ -67,14 +72,16 @@ CREATE VIEW fifteen_minutes_candles AS
         close(candlestick) AS close,
         close_time(candlestick) AS close_time,
         volume(candlestick) AS volume,
-        vwap(candlestick) AS vwap
+        vwap(candlestick) AS vwap,
+        trade_count
     FROM fifteen_minutes_candles_cs;
 
 CREATE MATERIALIZED VIEW thirty_minutes_candles_cs
 WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
 SELECT time_bucket('30 minutes', bucket) AS bucket,
     symbol,
-    rollup(candlestick) AS candlestick
+    rollup(candlestick) AS candlestick,
+    SUM(trade_count) AS trade_count
 FROM fifteen_minutes_candles_cs
 GROUP BY 1, 2 WITH NO DATA;
 
@@ -90,14 +97,16 @@ CREATE VIEW thirty_minutes_candles AS
         close(candlestick) AS close,
         close_time(candlestick) AS close_time,
         volume(candlestick) AS volume,
-        vwap(candlestick) AS vwap
+        vwap(candlestick) AS vwap,
+        trade_count
     FROM thirty_minutes_candles_cs;
 
 CREATE MATERIALIZED VIEW one_hour_candles_cs
 WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
 SELECT time_bucket('1 hour', bucket) AS bucket,
     symbol,
-    rollup(candlestick) AS candlestick
+    rollup(candlestick) AS candlestick,
+    SUM(trade_count) AS trade_count
 FROM thirty_minutes_candles_cs
 GROUP BY 1, 2 WITH NO DATA;
 
@@ -113,14 +122,16 @@ CREATE VIEW one_hour_candles AS
         close(candlestick) AS close,
         close_time(candlestick) AS close_time,
         volume(candlestick) AS volume,
-        vwap(candlestick) AS vwap
+        vwap(candlestick) AS vwap,
+        trade_count
     FROM one_hour_candles_cs;
 
 CREATE MATERIALIZED VIEW four_hours_candles_cs
 WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
 SELECT time_bucket('4 hours', bucket) AS bucket,
     symbol,
-    rollup(candlestick) AS candlestick
+    rollup(candlestick) AS candlestick,
+    SUM(trade_count) AS trade_count
 FROM one_hour_candles_cs
 GROUP BY 1, 2 WITH NO DATA;
 
@@ -136,14 +147,16 @@ CREATE VIEW four_hours_candles AS
         close(candlestick) AS close,
         close_time(candlestick) AS close_time,
         volume(candlestick) AS volume,
-        vwap(candlestick) AS vwap
+        vwap(candlestick) AS vwap,
+        trade_count
     FROM four_hours_candles_cs;
 
 CREATE MATERIALIZED VIEW one_day_candles_cs
 WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
 SELECT time_bucket('1 day', bucket) AS bucket,
     symbol,
-    rollup(candlestick) AS candlestick
+    rollup(candlestick) AS candlestick,
+    SUM(trade_count) AS trade_count
 FROM four_hours_candles_cs
 GROUP BY 1, 2 WITH NO DATA;
 
@@ -159,14 +172,16 @@ CREATE VIEW one_day_candles AS
         close(candlestick) AS close,
         close_time(candlestick) AS close_time,
         volume(candlestick) AS volume,
-        vwap(candlestick) AS vwap
+        vwap(candlestick) AS vwap,
+        trade_count
     FROM one_day_candles_cs;
 
 CREATE MATERIALIZED VIEW one_week_candles_cs
 WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
 SELECT time_bucket('7 days', bucket) AS bucket,
     symbol,
-    rollup(candlestick) AS candlestick
+    rollup(candlestick) AS candlestick,
+    SUM(trade_count) AS trade_count
 FROM one_day_candles_cs
 GROUP BY 1, 2 WITH NO DATA;
 
@@ -182,14 +197,16 @@ CREATE VIEW one_week_candles AS
         close(candlestick) AS close,
         close_time(candlestick) AS close_time,
         volume(candlestick) AS volume,
-        vwap(candlestick) AS vwap
+        vwap(candlestick) AS vwap,
+        trade_count
     FROM one_week_candles_cs;
 
 CREATE MATERIALIZED VIEW one_month_candles_cs
 WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
 SELECT time_bucket('1 month', bucket) AS bucket,
     symbol,
-    rollup(candlestick) AS candlestick
+    rollup(candlestick) AS candlestick,
+    SUM(trade_count) AS trade_count
 FROM one_day_candles_cs
 GROUP BY 1, 2 WITH NO DATA;
 
@@ -205,7 +222,8 @@ CREATE VIEW one_month_candles AS
         close(candlestick) AS close,
         close_time(candlestick) AS close_time,
         volume(candlestick) AS volume,
-        vwap(candlestick) AS vwap
+        vwap(candlestick) AS vwap,
+        trade_count
     FROM one_month_candles_cs;
 
 -- Add continuous aggregate policies
