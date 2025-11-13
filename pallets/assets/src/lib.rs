@@ -20,7 +20,7 @@ pub const ETH: u32 = 1;
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
-    use frame_support::{dispatch::DispatchResult, pallet_macros, pallet_prelude::*};
+    use frame_support::{dispatch::DispatchResult, pallet_prelude::*};
     use frame_system::pallet_prelude::{OriginFor, *};
 
     #[pallet::pallet]
@@ -113,8 +113,8 @@ pub mod pallet {
 
             Self::deposit_event(Event::Deposited {
                 user: who,
-                asset_id: asset_id,
-                amount: amount,
+                asset_id,
+                amount,
             });
             Ok(())
         }
@@ -138,8 +138,8 @@ pub mod pallet {
 
             Self::deposit_event(Event::Withdrawn {
                 user: who,
-                asset_id: asset_id,
-                amount: amount,
+                asset_id,
+                amount,
             });
             Ok(())
         }
@@ -169,8 +169,8 @@ pub mod pallet {
 
             Self::deposit_event(Event::Locked {
                 user: (*user).clone(),
-                asset_id: asset_id,
-                amount: amount,
+                asset_id,
+                amount,
             });
 
             Ok(())
@@ -219,8 +219,8 @@ pub mod pallet {
             Self::deposit_event(Event::Transferred {
                 from: from.clone(),
                 to: to.clone(),
-                asset_id: asset_id,
-                amount: amount,
+                asset_id,
+                amount,
             });
 
             Ok(())

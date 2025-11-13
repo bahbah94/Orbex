@@ -1,6 +1,4 @@
-use codec::{Decode, Encode};
-use frame_support::{ensure, pallet_prelude::*};
-use sp_runtime::traits::Zero;
+use frame_support::pallet_prelude::*;
 use sp_std::{collections::btree_map::BTreeMap, vec::Vec};
 
 // Import our types
@@ -71,7 +69,7 @@ pub fn match_persistent_storage<T: Config>(
     let mut trades = Vec::new();
 
     for order_id in unmatched.iter() {
-        let mut order = match orders_map.get(&order_id) {
+        let mut order = match orders_map.get(order_id) {
             Some(o) => o.clone(),
             None => continue,
         };

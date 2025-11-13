@@ -19,19 +19,19 @@ services:
       - solochain-data:/data
     restart: unless-stopped
 
-  db:
-    image: postgres:15
-    container_name: indexer-postgres
+  timescaledb:
+    image: timescale/timescaledb-ha:pg17
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB_FULL_NAME}
-    ports:
-      - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - ./indexer/db/timescale.sql:/mnt/timescale.sql
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -71,3 +71,4 @@ services:
 volumes:
   pgdata:
   solochain-data:
+

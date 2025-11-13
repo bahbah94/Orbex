@@ -41,7 +41,7 @@ fn testnet_genesis(
         aura: pallet_aura::GenesisConfig {
             authorities: initial_authorities
                 .iter()
-                .map(|x| (x.0.clone()))
+                .map(|x| x.0.clone())
                 .collect::<Vec<_>>(),
         },
         grandpa: pallet_grandpa::GenesisConfig {
@@ -64,6 +64,10 @@ pub fn development_config_genesis() -> Value {
         vec![
             Sr25519Keyring::Alice.to_account_id(),
             Sr25519Keyring::Bob.to_account_id(),
+            Sr25519Keyring::Charlie.to_account_id(),
+            Sr25519Keyring::Dave.to_account_id(),
+            Sr25519Keyring::Eve.to_account_id(),
+            Sr25519Keyring::Ferdie.to_account_id(),
             Sr25519Keyring::AliceStash.to_account_id(),
             Sr25519Keyring::BobStash.to_account_id(),
         ],

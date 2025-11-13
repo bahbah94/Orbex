@@ -11,7 +11,9 @@ members = [
     "pallets/template",
     "pallets/assets",
     "pallets/orderbook",
-    "runtime", "indexer",
+    "runtime",
+    "indexer",
+    "tradebot",
 ]
 resolver = "2"
 
@@ -49,7 +51,7 @@ sp-inherents = { version = "36.0.0", default-features = false }
 sp-io = { version = "40.0.1", default-features = false }
 sp-keyring = { version = "41.0.0", default-features = false }
 sp-runtime = { version = "41.1.0", default-features = false }
-sp-std = {version = "14.0.0", default-features = false}
+sp-std = { version = "14.0.0", default-features = false }
 sp-timestamp = { version = "36.0.0", default-features = false }
 substrate-frame-rpc-system = { version = "43.0.0", default-features = false }
 substrate-build-script-utils = { version = "11.0.0", default-features = false }
@@ -64,7 +66,7 @@ pallet-aura = { version = "39.0.0", default-features = false }
 pallet-assets = { version = "0.1.0", path = "./pallets/assets", default-features = false }
 pallet-balances = { version = "41.1.0", default-features = false }
 pallet-grandpa = { version = "40.0.0", default-features = false }
-pallet-orderbook = {version = "0.1.0", path="./pallets/orderbook" , default-features = false}
+pallet-orderbook = { version = "0.1.0", path = "./pallets/orderbook", default-features = false }
 pallet-sudo = { version = "40.0.0", default-features = false }
 pallet-timestamp = { version = "39.0.0", default-features = false }
 pallet-transaction-payment-rpc-runtime-api = { version = "40.0.0", default-features = false }
@@ -86,4 +88,3 @@ panic = "unwind"
 codegen-units = 1
 inherits = "release"
 lto = true
-
