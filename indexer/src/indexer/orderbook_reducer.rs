@@ -1,16 +1,43 @@
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::BTreeMap;
 use tokio::sync::broadcast;
 use tracing::info;
 
-/// Update event for orderbook changes
-#[derive(Debug, Clone)]
-pub enum OrderbookUpdateEvent {
-    OrderPlaced,
-    OrderCancelled,
-    OrderFilled,
-    OrderPartiallyFilled,
+/// Price level in orderbook snapshot
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PriceLevel {
+    pub price: u128,
+    pub total_quantity: u128,
+    pub order_count: usize,
+}
+
+/// Spread information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Spread {
+    pub best_bid: u128,
+    pub best_ask: u128,
+    pub spread: u128,
+}
+
+/// Summary statistics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderbookSummary {
+    pub total_bid_levels: usize,
+    pub total_ask_levels: usize,
+    pub total_orders: usize,
+    pub total_bid_volume: u128,
+    pub total_ask_volume: u128,
+}
+
+/// Complete orderbook snapshot - sent over broadcast channel
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderbookSnapshot {
+    pub bids: Vec<PriceLevel>,
+    pub asks: Vec<PriceLevel>,
+    pub spread: Option<Spread>,
+    pub summary: OrderbookSummary,
 }
 
 #[derive(Debug)]
@@ -18,8 +45,8 @@ pub struct OrderbookState {
     pub bids: BTreeMap<u128, Vec<u64>>,
     pub asks: BTreeMap<u128, Vec<u64>>,
     pub orders: BTreeMap<u64, OrderInfo>,
-    /// Optional broadcast channel for push-based updates
-    broadcast_tx: Option<broadcast::Sender<OrderbookUpdateEvent>>,
+    /// Optional broadcast channel for push-based snapshot updates
+    broadcast_tx: Option<broadcast::Sender<OrderbookSnapshot>>,
 }
 
 #[derive(Debug)]
@@ -44,7 +71,7 @@ impl OrderbookState {
     }
 
     /// Create a new OrderbookState with broadcast channel for push-based updates
-    pub fn with_broadcast(broadcast_tx: broadcast::Sender<OrderbookUpdateEvent>) -> Self {
+    pub fn with_broadcast(broadcast_tx: broadcast::Sender<OrderbookSnapshot>) -> Self {
         Self {
             bids: BTreeMap::new(),
             asks: BTreeMap::new(),
@@ -53,13 +80,86 @@ impl OrderbookState {
         }
     }
 
-    /// Notify subscribers of orderbook change
-    fn notify(&self, event: OrderbookUpdateEvent) {
+    /// Notify subscribers of orderbook change by sending full snapshot
+    fn notify(&self) {
         if let Some(ref tx) = self.broadcast_tx {
-            let res = tx.send(event);
-            if res.is_err() {
-                println!("No subscribers for orderbook updates");
+            let snapshot = self.get_snapshot();
+            tracing::debug!(
+                "Broadcasting orderbook snapshot: {} bid levels, {} ask levels, {} orders",
+                snapshot.summary.total_bid_levels,
+                snapshot.summary.total_ask_levels,
+                snapshot.summary.total_orders
+            );
+            if let Err(_) = tx.send(snapshot) {
+                tracing::debug!("No subscribers for orderbook updates");
             }
+        }
+    }
+
+    /// Generate orderbook snapshot from current state
+    pub fn get_snapshot(&self) -> OrderbookSnapshot {
+        let bids: Vec<PriceLevel> = self
+            .bids
+            .iter()
+            .rev()
+            .map(|(price, orders)| {
+                let total_quantity: u128 = orders
+                    .iter()
+                    .filter_map(|id| self.orders.get(id).map(|o| o.quantity - o.filled_quantity))
+                    .sum();
+
+                PriceLevel {
+                    price: *price,
+                    total_quantity,
+                    order_count: orders.len(),
+                }
+            })
+            .collect();
+
+        let asks: Vec<PriceLevel> = self
+            .asks
+            .iter()
+            .map(|(price, orders)| {
+                let total_quantity: u128 = orders
+                    .iter()
+                    .filter_map(|id| self.orders.get(id).map(|o| o.quantity - o.filled_quantity))
+                    .sum();
+
+                PriceLevel {
+                    price: *price,
+                    total_quantity,
+                    order_count: orders.len(),
+                }
+            })
+            .collect();
+
+        let (total_bid_volume, total_ask_volume): (u128, u128) =
+            self.orders.values().fold((0, 0), |(bids, asks), order| {
+                let remaining = order.quantity.saturating_sub(order.filled_quantity);
+                if order.side == "Buy" {
+                    (bids.saturating_add(remaining), asks)
+                } else {
+                    (bids, asks.saturating_add(remaining))
+                }
+            });
+
+        let spread = self.get_spread().map(|(best_bid, best_ask)| Spread {
+            best_bid,
+            best_ask,
+            spread: best_ask.saturating_sub(best_bid),
+        });
+
+        OrderbookSnapshot {
+            bids,
+            asks,
+            spread,
+            summary: OrderbookSummary {
+                total_bid_levels: self.bids.len(),
+                total_ask_levels: self.asks.len(),
+                total_orders: self.orders.len(),
+                total_bid_volume,
+                total_ask_volume,
+            },
         }
     }
 
@@ -87,7 +187,7 @@ impl OrderbookState {
         self.orders.insert(order_id, order);
 
         info!("Added order with order_id {}", order_id);
-        self.notify(OrderbookUpdateEvent::OrderPlaced);
+        self.notify();
     }
 
     pub fn update_order(
@@ -106,11 +206,9 @@ impl OrderbookState {
 
         if status == "Filled" {
             self.remove_order_from_level(order_id, &side, price);
-            self.notify(OrderbookUpdateEvent::OrderFilled);
-        } else if status == "PartiallyFilled" {
-            self.notify(OrderbookUpdateEvent::OrderPartiallyFilled);
         }
 
+        self.notify();
         Ok(())
     }
 
@@ -146,7 +244,7 @@ impl OrderbookState {
 
         self.remove_order_from_level(order_id, &side, price);
         info!(" Order #{} cancelled", order_id);
-        self.notify(OrderbookUpdateEvent::OrderCancelled);
+        self.notify();
 
         Ok(())
     }
@@ -232,93 +330,3 @@ pub async fn process_order_place(
     Ok(())
 }
 
-pub fn get_orderbook_snapshot(state: &OrderbookState) -> serde_json::Value {
-    println!("Generating orderbook snapshot from state: {:?}", state);
-    let bids: Vec<_> = state
-        .bids
-        .iter()
-        .rev()
-        .map(|(price, orders)| {
-            let total_quantity: u128 = orders
-                .iter()
-                .filter_map(|id| state.orders.get(id).map(|o| o.quantity - o.filled_quantity))
-                .sum();
-
-            serde_json::json!({
-                "price": price,
-                "count": orders.len(),
-                "total_quantity": total_quantity,
-                "orders": orders.iter()
-                    .filter_map(|id| state.orders.get(id))
-                    .map(|o| serde_json::json!({
-                        "order_id": o.order_id,
-                        "quantity": o.quantity,
-                        "filled_quantity": o.filled_quantity,
-                        "remaining": o.quantity - o.filled_quantity,
-                        "status": o.status,
-                    }))
-                    .collect::<Vec<_>>()
-            })
-        })
-        .collect();
-
-    let asks: Vec<_> = state
-        .asks
-        .iter()
-        .map(|(price, orders)| {
-            let total_quantity: u128 = orders
-                .iter()
-                .filter_map(|id| state.orders.get(id).map(|o| o.quantity - o.filled_quantity))
-                .sum();
-
-            serde_json::json!({
-                "price": price,
-                "count": orders.len(),
-                "total_quantity": total_quantity,
-                "orders": orders.iter()
-                    .filter_map(|id| state.orders.get(id))
-                    .map(|o| serde_json::json!({
-                        "order_id": o.order_id,
-                        "quantity": o.quantity,
-                        "filled_quantity": o.filled_quantity,
-                        "remaining": o.quantity - o.filled_quantity,
-                        "status": o.status,
-                    }))
-                    .collect::<Vec<_>>()
-            })
-        })
-        .collect();
-
-    let (total_bid_volume, total_ask_volume): (u128, u128) =
-        state.orders.values().fold((0, 0), |(bids, asks), order| {
-            let remaining = order.quantity.saturating_sub(order.filled_quantity);
-            if order.side == "Buy" {
-                (bids.saturating_add(remaining), asks)
-            } else {
-                (bids, asks.saturating_add(remaining))
-            }
-        });
-
-    println!("bids: {:?}", bids);
-    println!("asks: {:?}", asks);
-    serde_json::json!({
-        "bids": bids,
-        "asks": asks,
-        "spread": if let Some((bid, ask)) = state.get_spread() {
-            serde_json::json!({
-                "best_bid": bid,
-                "best_ask": ask,
-                "spread": ask.saturating_sub(bid)
-            })
-        } else {
-            serde_json::json!(null)
-        },
-        "summary": {
-            "total_bid_levels": state.bids.len(),
-            "total_ask_levels": state.asks.len(),
-            "total_orders": state.orders.len(),
-            "total_bid_volume": total_bid_volume,
-            "total_ask_volume": total_ask_volume,
-        }
-    })
-}

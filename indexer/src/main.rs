@@ -16,11 +16,20 @@ use indexer::orderbook_reducer::OrderbookState;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging
-    tracing_subscriber::fmt::init();
-
-    // Load environment variables
+    // Load environment variables first
     dotenv().ok();
+
+    // Initialize logging with environment variable support
+    // Supports RUST_LOG env var (e.g., RUST_LOG=debug, RUST_LOG=indexer=trace)
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"))
+        )
+        .with_target(true)
+        .with_thread_ids(false)
+        .with_line_number(true)
+        .init();
 
     let node_url = env::var("NODE_WS_URL").unwrap_or_else(|_| "ws://127.0.0.1:9944".to_string());
     let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
@@ -36,8 +45,8 @@ async fn main() -> Result<()> {
     // Create broadcast channels for push-based updates
     info!("📊 Initializing broadcast channels...");
 
-    // Orderbook update channel
-    let (ob_tx, _) = broadcast::channel::<indexer::orderbook_reducer::OrderbookUpdateEvent>(1000);
+    // Orderbook update channel (broadcasts full snapshots)
+    let (ob_tx, _) = broadcast::channel::<indexer::orderbook_reducer::OrderbookSnapshot>(1000);
 
     // OHLCV update channel
     let (candle_tx, _) = broadcast::channel::<CandleUpdate>(1000);

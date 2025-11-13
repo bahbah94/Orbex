@@ -29,7 +29,7 @@ pub async fn start(
         let block = block?;
         let block_number = block.header().number;
 
-        debug!("Processing block number: {}", block_number);
+        info!("📦 Processing block number: {}", block_number);
 
         // Get events directly from block
         let events = block.events().await?;

@@ -1,6 +1,6 @@
 use crate::api::{handlers, websocket};
 use crate::indexer::candle_aggregator::CandleUpdate;
-use crate::indexer::orderbook_reducer::{OrderbookState, OrderbookUpdateEvent};
+use crate::indexer::orderbook_reducer::{OrderbookSnapshot, OrderbookState};
 use axum::{routing::get, Router};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -10,7 +10,7 @@ use tower_http::cors::{Any, CorsLayer};
 pub async fn run_server(
     orderbook: Arc<Mutex<OrderbookState>>,
     pool: PgPool,
-    ob_broadcast: broadcast::Sender<OrderbookUpdateEvent>,
+    ob_broadcast: broadcast::Sender<OrderbookSnapshot>,
     candle_broadcast: broadcast::Sender<CandleUpdate>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let app_state = (orderbook.clone(), pool);

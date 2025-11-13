@@ -1,4 +1,5 @@
 use crate::indexer::candle_aggregator::TvBar;
+use crate::indexer::orderbook_reducer::OrderbookSnapshot;
 /// Unified WebSocket message types for orderbook and OHLCV updates
 use serde::{Deserialize, Serialize};
 
@@ -14,21 +15,21 @@ pub enum MarketDataMessage {
     Status(StatusMessage),
 }
 
+/// Price level for websocket message (with string formatting)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsPriceLevel {
+    pub price: String,
+    pub quantity: String,
+    pub order_count: usize,
+}
+
 /// Orderbook update message
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderbookUpdate {
     pub symbol: String,
-    pub bids: Vec<PriceLevel>,
-    pub asks: Vec<PriceLevel>,
+    pub bids: Vec<WsPriceLevel>,
+    pub asks: Vec<WsPriceLevel>,
     pub timestamp: i64,
-}
-
-/// Price level in orderbook
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PriceLevel {
-    pub price: String,
-    pub quantity: String,
-    pub order_count: usize,
 }
 
 /// OHLCV candle update
@@ -47,9 +48,28 @@ pub struct StatusMessage {
 }
 
 impl MarketDataMessage {
-    pub fn orderbook(symbol: String, bids: Vec<PriceLevel>, asks: Vec<PriceLevel>) -> Self {
-        println!("bids: {:?}", bids);
-        println!("asks: {:?}", asks);
+    /// Create orderbook message from OrderbookSnapshot (converts to string format for JSON)
+    pub fn orderbook_from_snapshot(symbol: String, snapshot: OrderbookSnapshot) -> Self {
+        let bids: Vec<WsPriceLevel> = snapshot
+            .bids
+            .into_iter()
+            .map(|level| WsPriceLevel {
+                price: level.price.to_string(),
+                quantity: level.total_quantity.to_string(),
+                order_count: level.order_count,
+            })
+            .collect();
+
+        let asks: Vec<WsPriceLevel> = snapshot
+            .asks
+            .into_iter()
+            .map(|level| WsPriceLevel {
+                price: level.price.to_string(),
+                quantity: level.total_quantity.to_string(),
+                order_count: level.order_count,
+            })
+            .collect();
+
         MarketDataMessage::Orderbook(OrderbookUpdate {
             symbol,
             bids,

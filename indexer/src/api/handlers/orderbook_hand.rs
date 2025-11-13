@@ -1,4 +1,4 @@
-use crate::indexer::orderbook_reducer::{get_orderbook_snapshot, OrderbookState};
+use crate::indexer::orderbook_reducer::OrderbookState;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -14,7 +14,7 @@ pub type AppState = (Arc<Mutex<OrderbookState>>, PgPool);
 
 pub async fn get_orderbook(State((orderbook, _pool)): State<AppState>) -> impl IntoResponse {
     let ob = orderbook.lock().await;
-    let snapshot = get_orderbook_snapshot(&ob);
+    let snapshot = ob.get_snapshot();
 
     Json(snapshot)
 }

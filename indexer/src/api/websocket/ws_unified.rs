@@ -9,16 +9,15 @@ use serde::Deserialize;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::sync::Mutex;
+use tracing::{debug, error, info, warn};
 
-use super::messages::{MarketDataMessage, PriceLevel};
+use super::messages::MarketDataMessage;
 use crate::indexer::candle_aggregator::CandleUpdate;
-use crate::indexer::orderbook_reducer::{
-    get_orderbook_snapshot, OrderbookState, OrderbookUpdateEvent,
-};
+use crate::indexer::orderbook_reducer::{OrderbookSnapshot, OrderbookState};
 
 pub type UnifiedState = (
     Arc<Mutex<OrderbookState>>,
-    broadcast::Sender<OrderbookUpdateEvent>,
+    broadcast::Sender<OrderbookSnapshot>,
     broadcast::Sender<CandleUpdate>,
 );
 
@@ -63,7 +62,7 @@ pub async fn ws_unified_handler(
 async fn handle_unified_socket(
     socket: WebSocket,
     orderbook: Arc<Mutex<OrderbookState>>,
-    ob_broadcast: broadcast::Sender<OrderbookUpdateEvent>,
+    ob_broadcast: broadcast::Sender<OrderbookSnapshot>,
     candle_broadcast: broadcast::Sender<CandleUpdate>,
     subscribe_orderbook: bool,
     subscribe_ohlcv: bool,
@@ -72,7 +71,7 @@ async fn handle_unified_socket(
 ) {
     let (mut sender, mut receiver) = socket.split();
 
-    println!(
+    info!(
         "📡 New unified WebSocket connection: ob={}, ohlcv={}, symbol={}",
         subscribe_orderbook, subscribe_ohlcv, symbol_filter
     );
@@ -80,43 +79,13 @@ async fn handle_unified_socket(
     // Send initial orderbook snapshot if subscribed
     if subscribe_orderbook {
         let ob = orderbook.lock().await;
-        let snapshot = get_orderbook_snapshot(&ob);
+        let snapshot = ob.get_snapshot();
+        drop(ob); // Release lock immediately
 
-        // Convert to MarketDataMessage format
-        let bids: Vec<PriceLevel> =
-            if let Some(arr) = snapshot.get("bids").and_then(|v| v.as_array()) {
-                arr.iter()
-                    .filter_map(|level| {
-                        Some(PriceLevel {
-                            price: level.get(0)?.as_str()?.to_string(),
-                            quantity: level.get(1)?.as_str()?.to_string(),
-                            order_count: level.get(2)?.as_u64()? as usize,
-                        })
-                    })
-                    .collect()
-            } else {
-                Vec::new()
-            };
-
-        let asks: Vec<PriceLevel> =
-            if let Some(arr) = snapshot.get("asks").and_then(|v| v.as_array()) {
-                arr.iter()
-                    .filter_map(|level| {
-                        Some(PriceLevel {
-                            price: level.get(0)?.as_str()?.to_string(),
-                            quantity: level.get(1)?.as_str()?.to_string(),
-                            order_count: level.get(2)?.as_u64()? as usize,
-                        })
-                    })
-                    .collect()
-            } else {
-                Vec::new()
-            };
-
-        let message = MarketDataMessage::orderbook(symbol_filter.clone(), bids, asks);
+        let message = MarketDataMessage::orderbook_from_snapshot(symbol_filter.clone(), snapshot);
         if let Ok(json) = serde_json::to_string(&message) {
             if sender.send(Message::Text(json.into())).await.is_err() {
-                println!("❌ Failed to send initial orderbook snapshot");
+                error!("Failed to send initial orderbook snapshot");
                 return;
             }
         }
@@ -147,60 +116,24 @@ async fn handle_unified_socket(
                 }
             } => {
                 match ob_result {
-                    Ok(_event) => {
-                        // Orderbook changed, send snapshot
-                        let ob = orderbook.lock().await;
-                        let snapshot = get_orderbook_snapshot(&ob);
-                        println!("Orderbook snapshot: {:?}", snapshot);
+                    Ok(snapshot) => {
+                        // Received orderbook snapshot from broadcast channel
+                        debug!("Received orderbook snapshot: {:?}", snapshot);
 
-                        let bids: Vec<PriceLevel> = if let Some(arr) = snapshot.get("bids").and_then(|v| v.as_array()) {
-                            arr.iter()
-                                .filter_map(|level| {
-                                    println!("Processing bid level: {:?}", level);
-                                    let pl = PriceLevel {
-                                        price: level.get(0)?.as_str()?.to_string(),
-                                        quantity: level.get(1)?.as_str()?.to_string(),
-                                        order_count: level.get(2)?.as_u64()? as usize,
-                                    };
-                                    println!("Created PriceLevel: {:?}", pl);
-                                    Some(pl)
-                                })
-                                .collect()
-                        } else {
-                            Vec::new()
-                        };
-
-                        let asks: Vec<PriceLevel> = if let Some(arr) = snapshot.get("asks").and_then(|v| v.as_array()) {
-                            arr.iter()
-                                .filter_map(|level| {
-                                    println!("Processing ask level: {:?}", level);
-                                    let pl = PriceLevel {
-                                        price: level.get(0)?.as_str()?.to_string(),
-                                        quantity: level.get(1)?.as_str()?.to_string(),
-                                        order_count: level.get(2)?.as_u64()? as usize,
-                                    };
-                                    println!("Created PriceLevel: {:?}", pl);
-                                    Some(pl)
-                                })
-                                .collect()
-                        } else {
-                            Vec::new()
-                        };
-
-                        let message = MarketDataMessage::orderbook(symbol_filter.clone(), bids, asks);
-                        println!("Sending orderbook update: {:?}", message);
+                        let message = MarketDataMessage::orderbook_from_snapshot(symbol_filter.clone(), snapshot);
+                        debug!("Sending orderbook update: {:?}", message);
                         if let Ok(json) = serde_json::to_string(&message) {
                             if sender.send(Message::Text(json.into())).await.is_err() {
-                                println!("❌ Failed to send orderbook update");
+                                error!("Failed to send orderbook update");
                                 break;
                             }
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                        println!("⚠️  Orderbook: Client lagged, skipped {} updates", skipped);
+                        warn!("Orderbook: Client lagged, skipped {} updates", skipped);
                     }
                     Err(broadcast::error::RecvError::Closed) => {
-                        println!("📪 Orderbook broadcast channel closed");
+                        info!("Orderbook broadcast channel closed");
                         break;
                     }
                 }
@@ -244,10 +177,10 @@ async fn handle_unified_socket(
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                        println!("⚠️  OHLCV: Client lagged, skipped {} updates", skipped);
+                        warn!("OHLCV: Client lagged, skipped {} updates", skipped);
                     }
                     Err(broadcast::error::RecvError::Closed) => {
-                        println!("📪 OHLCV broadcast channel closed");
+                        info!("OHLCV broadcast channel closed");
                         break;
                     }
                 }
@@ -257,7 +190,7 @@ async fn handle_unified_socket(
             msg = receiver.next() => {
                 match msg {
                     Some(Ok(Message::Close(_))) => {
-                        println!("👋 Client closed unified connection");
+                        info!("Client closed unified connection");
                         break;
                     }
                     Some(Ok(Message::Ping(data))) => {
@@ -270,11 +203,11 @@ async fn handle_unified_socket(
                         // For now, just acknowledge
                     }
                     Some(Err(e)) => {
-                        println!("❌ WebSocket error: {:?}", e);
+                        error!("WebSocket error: {:?}", e);
                         break;
                     }
                     None => {
-                        println!("🔌 Connection lost");
+                        info!("Connection lost");
                         break;
                     }
                     _ => {}
@@ -283,5 +216,5 @@ async fn handle_unified_socket(
         }
     }
 
-    println!("🔚 Unified WebSocket connection closed");
+    info!("Unified WebSocket connection closed");
 }
