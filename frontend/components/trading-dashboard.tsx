@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { TradingViewChart } from "@/components/trading-view-chart"
+import { TradingViewChart, SimulatedTVChart } from "@/components/trading-view-chart"
 import { WalletConnect } from "@/components/wallet-connect"
 import { OrderBook } from "@/components/order-book"
 import { TradingForm } from "@/components/trading-form"
@@ -125,7 +125,11 @@ export function TradingDashboard() {
                   </div>
                 </div>
                 <div className="flex-1">
-                  <TradingViewChart symbol={selectedPair} />
+                  {/* <TradingViewChart symbol={selectedPair} /> */}
+                  <SimulatedTVChart symbol={selectedPair} />
+                  {/* <div className="p-4">
+                    
+                  </div> */}
                 </div>
               </div>
 
