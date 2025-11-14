@@ -9,6 +9,8 @@ import { Slider } from "@/components/ui/slider"
 import { useToast } from "@/hooks/use-toast"
 import { Z_VERSION_ERROR } from "zlib"
 import { FundDialog } from "./ui/depositwithdraw"
+import { usePolkadot } from "@/hooks/polkadot-hooks"
+import { placeOrder, cancelOrder } from "@/lib/polkadot/transactions"
 
 interface TradingFormProps {
   selectedPair: string
@@ -23,26 +25,65 @@ export function TradingForm({ selectedPair }: TradingFormProps) {
   const [sellPercentage, setSellPercentage] = useState([0])
   const { toast } = useToast()
 
+  const { selectedAccount } = usePolkadot();
+  // this will be replaced with extrinsics
+  const handleBuy = async () => {
+    if (!selectedAccount) {
+      return toast({ title: "No Polkadot account connected" });
+    }
 
-  const handleBuy = () => {
-    toast({
-      title: "Buy Order Placed",
-      description: `Buying ${buyAmount} ${selectedPair.split("/")[0]} at $${buyPrice}`,
-    })
-    setBuyAmount("")
-    setBuyPrice("")
-    setBuyPercentage([0])
+    try {
+      await placeOrder(
+        "Buy", 
+        BigInt(buyPrice),             
+        BigInt(buyAmount),
+        "Limit", /// Only using Limit Orders for now
+        selectedAccount,
+      );
+  
+      toast({
+        title: "Buy Order Submitted",
+        description: `Buying ${buyAmount} at $${buyPrice}`,
+      });
+    } catch (error) {
+      toast({ title: "Order failed", description: error });
+    }
+
+    setBuyAmount("");
+    setBuyPrice("");
+    setBuyPercentage([0]);
   }
 
-  const handleSell = () => {
-    toast({
-      title: "Sell Order Placed",
-      description: `Selling ${sellAmount} ${selectedPair.split("/")[0]} at $${sellPrice}`,
-    })
+  const handleSell = async () => {
+    if (!selectedAccount) {
+      return toast({ title: " No Polkadot account selected"});
+    }
+    try{
+      await placeOrder(
+        "Sell", 
+        BigInt(sellPrice),             
+        BigInt(sellAmount),
+        "Limit", /// Only using Limit Orders for now
+        selectedAccount,
+      );
+
+      toast({
+        title: "Sell Order Submitted",
+        description: `Selling ${sellAmount} at $${sellPrice}`,
+      });
+    } catch (error) {
+      toast({title: "Order sell failed", description: error})
+    }
+
+
     setSellAmount("")
     setSellPrice("")
     setSellPercentage([0])
-  }
+    }
+
+
+    
+
 
   return (
     <div className="flex h-full flex-col border-border bg-card">
