@@ -1,4 +1,4 @@
-FROM rust:1.83-slim AS builder
+FROM rust:1.90-slim AS builder
 WORKDIR /workspace
 
 COPY Cargo.toml Cargo.lock ./
@@ -13,9 +13,7 @@ WORKDIR /usr/local/bin
 
 COPY --from=builder /workspace/target/release/indexer .
 
-ENV RUST_LOG=info
-ENV DATABASE_URL=postgres://postgres:postgres@db:5432/ohlc
-ENV ENV=dev
+ENV INDEXER_PORT=8081
+EXPOSE ${INDEXER_PORT}
 
-EXPOSE 8081
-CMD ["./indexer"]
+CMD ["./orbexindexer"]

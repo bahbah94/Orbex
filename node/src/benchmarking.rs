@@ -7,7 +7,7 @@ use crate::service::FullClient;
 use runtime::{AccountId, Balance, BalancesCall, SystemCall};
 use sc_cli::Result;
 use sc_client_api::BlockBackend;
-use solochain_template_runtime as runtime;
+use orbex_runtime as runtime;
 use sp_core::{Encode, Pair};
 use sp_inherents::{InherentData, InherentDataProvider};
 use sp_keyring::Sr25519Keyring;
@@ -121,6 +121,7 @@ pub fn create_benchmark_extrinsic(
         .map(|c| c / 2)
         .unwrap_or(2) as u64;
     let tx_ext: runtime::TxExtension = (
+        frame_system::AuthorizeCall::<runtime::Runtime>::new(),
         frame_system::CheckNonZeroSender::<runtime::Runtime>::new(),
         frame_system::CheckSpecVersion::<runtime::Runtime>::new(),
         frame_system::CheckTxVersion::<runtime::Runtime>::new(),
@@ -140,6 +141,7 @@ pub fn create_benchmark_extrinsic(
         call.clone(),
         tx_ext.clone(),
         (
+            (),
             (),
             runtime::VERSION.spec_version,
             runtime::VERSION.transaction_version,
@@ -171,6 +173,6 @@ pub fn inherent_benchmark_data() -> Result<InherentData> {
     let timestamp = sp_timestamp::InherentDataProvider::new(d.into());
 
     futures::executor::block_on(timestamp.provide_inherent_data(&mut inherent_data))
-        .map_err(|e| format!("creating inherent data: {:?}", e))?;
+        .map_err(|e| format!("creating inherent data: {e:?}"))?;
     Ok(inherent_data)
 }

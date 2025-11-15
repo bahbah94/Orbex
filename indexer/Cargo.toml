@@ -1,54 +1,32 @@
 [package]
-name = "orderbook-indexer"
+name = "orbex-indexer"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Substrate interaction
-subxt = "0.44"
-subxt-signer = "0.44"
-
-# Async runtime
-tokio = { version = "1.36", features = ["full"] }
-
-# Database
+axum = { version = "0.8.6", features = ["ws"] }
+chrono = { workspace = true }
+deadpool-postgres = "0.14.1"
+dotenvy = { workspace = true }
+anyhow = { workspace = true }
+futures = { workspace = true }
+hex = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 sqlx = { version = "0.8.6", features = [
     "postgres",
     "runtime-tokio",
     "chrono",
     "migrate",
 ] }
-deadpool-postgres = "0.14.1"
-
-# Serialization
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-
-# Error handling
-anyhow = "1.0"
-thiserror = "1.0"
-
-# Logging
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# Config
-dotenv = "0.15"
-
-# Logging
-log = "0.4"
-env_logger = "0.11"
-hex = "0.4.3"
-
-# Metrics (optional)
-# prometheus = "0.13"
-
-# Axum/backend server
-axum = { version = "0.8.6", features = ["ws"] }
+subxt = { workspace = true }
+subxt-signer = { workspace = true }
+thiserror = "2.0.17"
+tokio = { workspace = true, features = ["full"] }
 tower = "0.5.2"
 tower-http = { version = "0.6.6", features = ["cors"] }
-futures = "0.3"
-chrono = "0.4"
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [dev-dependencies]
 tokio-test = "0.4"

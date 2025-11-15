@@ -3,20 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::broadcast;
 
-/// TradingView-compatible Bar format
-/// https://www.tradingview.com/charting-library-docs/latest/api/interfaces/Charting_Library.Bar
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TvBar {
-    /// Unix timestamp in SECONDS (TradingView requirement)
-    pub time: i64,
-    pub open: f64,
-    pub high: f64,
-    pub low: f64,
-    pub close: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub volume: Option<f64>,
-}
-
 /// Internal candle representation with metadata
 #[derive(Debug, Clone)]
 pub struct Candle {
@@ -30,20 +16,6 @@ pub struct Candle {
     pub open_time: i64, // Unix timestamp in milliseconds
     pub close_time: i64,
     pub trade_count: u64,
-}
-
-impl Candle {
-    /// Convert to TradingView Bar format
-    pub fn to_tv_bar(&self) -> TvBar {
-        TvBar {
-            time: self.open_time / 1000, // Convert milliseconds to seconds
-            open: self.open as f64,
-            high: self.high as f64,
-            low: self.low as f64,
-            close: self.close as f64,
-            volume: Some(self.volume as f64),
-        }
-    }
 }
 
 impl Candle {
@@ -215,21 +187,6 @@ impl CandleAggregator {
         }
 
         Ok(())
-    }
-
-    /// Get current candle for a symbol/timeframe (useful for initial snapshot)
-    pub fn get_current_candle(&self, symbol: &str, timeframe: &str) -> Option<&Candle> {
-        self.current_candles
-            .get(&(symbol.to_string(), timeframe.to_string()))
-    }
-
-    /// Get all current candles for a symbol
-    pub fn get_symbol_candles(&self, symbol: &str) -> Vec<&Candle> {
-        self.current_candles
-            .iter()
-            .filter(|((s, _), _)| s == symbol)
-            .map(|(_, candle)| candle)
-            .collect()
     }
 }
 

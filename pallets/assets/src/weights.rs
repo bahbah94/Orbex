@@ -13,7 +13,7 @@
 // benchmark
 // pallet
 // --runtime
-// target/release/wbuild/solochain-template-runtime/solochain_template_runtime.compact.compressed.wasm
+// target/release/wbuild/orbex-runtime/orbex_runtime.compact.compressed.wasm
 // --pallet
 // pallet_assets
 // --extrinsic

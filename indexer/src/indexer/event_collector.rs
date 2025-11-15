@@ -2,7 +2,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::indexer::candle_aggregator::CandleAggregator;
-use crate::indexer::order_extractor::*;
 use crate::indexer::orderbook_reducer::{OrderInfo, OrderbookState};
 use crate::indexer::runtime;
 use crate::indexer::trade_mapper::{process_trade, TradeProcessingContext};
@@ -39,7 +38,6 @@ pub async fn start(
             let evt = evt?;
             let pallet_name = evt.pallet_name();
             let event_name = evt.variant_name();
-            let event_values = evt.field_values()?;
 
             // Route to appropriate handler
             match (pallet_name, event_name) {
@@ -76,74 +74,73 @@ pub async fn start(
                 }
                 ("Orderbook", "OrderPlaced") => {
                     info!("📦 Order placed in block {}", block_number);
-                    //println!("Full event_values: {:#?}", event_values);
-                    match extract_order_placed(&event_values) {
-                        Ok(data) => {
-                            println!(
+                    match evt.as_event::<runtime::OrderPlaced>() {
+                        Ok(Some(place_order_event)) => {
+                            info!(
                                 "📦 OrderPlaced: id={}, side={}, price={}, qty={}",
-                                data.order_id, data.side, data.price, data.quantity
+                                place_order_event.order_id,
+                                place_order_event.side,
+                                place_order_event.price,
+                                place_order_event.quantity
                             );
                             let mut state = orderbook_state.lock().await;
                             let order = OrderInfo {
-                                order_id: data.order_id as u64,
-                                side: data.side,
-                                price: data.price,
-                                quantity: data.quantity,
+                                order_id: place_order_event.order_id,
+                                side: place_order_event.side.to_string(),
+                                price: place_order_event.price,
+                                quantity: place_order_event.quantity,
                                 filled_quantity: 0,
                                 status: "Open".to_string(),
                             };
                             state.add_order(order);
-                            println!("✅ Order #{} added to state", data.order_id);
-                            println!("orderbook state: {:?}", *state);
+                            info!("✅ Order #{} added to state", place_order_event.order_id);
                         }
-                        Err(e) => println!("❌ Failed to parse orderplaced: {}", e),
+                        Ok(None) => debug!("❌ OrderPlaced event is None (filtered?)"),
+                        Err(e) => debug!("❌ Failed to parse orderplaced: {}", e),
                     }
                 }
                 ("Orderbook", "OrderCancelled") => {
                     info!("❌ Order cancelled in block {}", block_number);
-                    match extract_order_cancelled(&event_values) {
-                        Ok(data) => {
+                    match evt.as_event::<runtime::OrderCancelled>() {
+                        Ok(Some(data)) => {
                             println!(
                                 "❌ OrderCancelled: id={}, trader={}",
                                 data.order_id, data.trader
                             );
 
                             let mut state = orderbook_state.lock().await;
-                            let _ = state.cancel_order(data.order_id as u64);
+                            let _ = state.cancel_order(data.order_id);
                             info!("✅ Order #{} cancelled", data.order_id);
                         }
-                        Err(e) => println!("❌ Failed to parse orderCancelled: {}", e),
+                        Ok(None) => debug!("❌ OrderCancelled event is None (filtered?)"),
+                        Err(e) => debug!("❌ Failed to parse orderCancelled: {}", e),
                     }
                 }
                 ("Orderbook", "OrderFilled") => {
                     info!("✅ Order filled in block {}", block_number);
-                    match extract_order_filled(&event_values) {
-                        Ok(data) => {
+                    match evt.as_event::<runtime::OrderFilled>() {
+                        Ok(Some(data)) => {
                             println!(
                                 "✅ OrderFilled: id={}, trader={}",
                                 data.order_id, data.trader
                             );
                             let mut state = orderbook_state.lock().await;
-                            let quantity = {
-                                state
-                                    .orders
-                                    .get(&(data.order_id as u64))
-                                    .map(|order| order.quantity)
-                            };
+                            let quantity =
+                                { state.orders.get(&data.order_id).map(|order| order.quantity) };
 
                             // Now use the mutable state, doing this to fix clash of mut and immut borrow from before
                             if let Some(qty) = quantity {
-                                let _ = state.update_order(data.order_id as u64, qty, "Filled");
+                                let _ = state.update_order(data.order_id, qty, "Filled");
                             }
                             info!("✅ Order #{} marked as filled", data.order_id);
                         }
-                        Err(e) => println!("❌ Failed to parse order filled: {}", e),
+                        Ok(None) => debug!("❌ OrderFilled event is None (filtered?)"),
+                        Err(e) => debug!("❌ Failed to parse order filled: {}", e),
                     }
                 }
                 ("Orderbook", "OrderPartiallyFilled") => {
-                    info!("📊 Order partially filled in block {}", block_number);
-                    match extract_order_partially_filled(&event_values) {
-                        Ok(data) => {
+                    match evt.as_event::<runtime::OrderPartiallyFilled>() {
+                        Ok(Some(data)) => {
                             println!(
                                 "📊 OrderPartiallyFilled: id={}, filled={}, remaining={}",
                                 data.order_id, data.filled_quantity, data.remaining_quantity
@@ -151,7 +148,7 @@ pub async fn start(
 
                             let mut state = orderbook_state.lock().await;
                             let _ = state.update_order(
-                                data.order_id as u64,
+                                data.order_id,
                                 data.filled_quantity,
                                 "PartiallyFilled",
                             );
@@ -162,7 +159,8 @@ pub async fn start(
                                 data.filled_quantity + data.remaining_quantity
                             );
                         }
-                        Err(e) => println!("❌ Failed: {}", e),
+                        Ok(None) => debug!("❌ OrderPartiallyFilled event is None (filtered?)"),
+                        Err(e) => debug!("❌ Failed: {}", e),
                     }
                 }
                 _ => {

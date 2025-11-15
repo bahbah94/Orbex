@@ -1,6 +1,6 @@
 [package]
-name = "solochain-template-runtime"
-description = "A solochain runtime template built with Substrate, part of Polkadot Sdk."
+name = "orbex-runtime"
+description = "Runtime for the Orbex blockchain node."
 version = "0.1.0"
 license = "Unlicense"
 authors.workspace = true
@@ -18,22 +18,24 @@ frame-benchmarking = { optional = true, workspace = true }
 frame-executive.workspace = true
 frame-metadata-hash-extension.workspace = true
 frame-support = { features = ["experimental"], workspace = true }
+frame-system.workspace = true
 frame-system-benchmarking = { optional = true, workspace = true }
 frame-system-rpc-runtime-api.workspace = true
-frame-system.workspace = true
 frame-try-runtime = { optional = true, workspace = true }
+pallet-assets.workspace = true
 pallet-aura.workspace = true
 pallet-balances.workspace = true
 pallet-grandpa.workspace = true
+pallet-orderbook.workspace = true
 pallet-sudo.workspace = true
 pallet-template.workspace = true
-pallet-assets.workspace = true
-pallet-orderbook.workspace = true
 pallet-timestamp.workspace = true
-pallet-transaction-payment-rpc-runtime-api.workspace = true
 pallet-transaction-payment.workspace = true
+pallet-transaction-payment-rpc-runtime-api.workspace = true
 scale-info = { features = ["derive", "serde"], workspace = true }
-serde_json = { workspace = true, default-features = false, features = ["alloc"] }
+serde_json = { workspace = true, default-features = false, features = [
+	"alloc",
+] }
 sp-api.workspace = true
 sp-block-builder.workspace = true
 sp-consensus-aura = { features = ["serde"], workspace = true }
@@ -46,7 +48,6 @@ sp-offchain.workspace = true
 sp-runtime = { features = ["serde"], workspace = true }
 sp-session.workspace = true
 sp-storage.workspace = true
-sp-std.workspace = true
 sp-transaction-pool.workspace = true
 sp-version = { features = ["serde"], workspace = true }
 
@@ -65,13 +66,13 @@ std = [
 	"frame-system-rpc-runtime-api/std",
 	"frame-system/std",
 	"frame-try-runtime?/std",
+	"pallet-assets/std",
 	"pallet-aura/std",
 	"pallet-balances/std",
 	"pallet-grandpa/std",
+	"pallet-orderbook/std",
 	"pallet-sudo/std",
 	"pallet-template/std",
-	"pallet-assets/std",
-	"pallet-orderbook/std",
 	"pallet-timestamp/std",
 	"pallet-transaction-payment-rpc-runtime-api/std",
 	"pallet-transaction-payment/std",
@@ -89,40 +90,37 @@ std = [
 	"sp-runtime/std",
 	"sp-session/std",
 	"sp-storage/std",
-	"sp-std/std",
 	"sp-transaction-pool/std",
 	"sp-version/std",
 	"substrate-wasm-builder",
 ]
-
 runtime-benchmarks = [
 	"frame-benchmarking/runtime-benchmarks",
 	"frame-support/runtime-benchmarks",
 	"frame-system-benchmarking/runtime-benchmarks",
 	"frame-system/runtime-benchmarks",
+	"pallet-assets/runtime-benchmarks",
 	"pallet-balances/runtime-benchmarks",
 	"pallet-grandpa/runtime-benchmarks",
+	"pallet-orderbook/runtime-benchmarks",
 	"pallet-sudo/runtime-benchmarks",
 	"pallet-template/runtime-benchmarks",
-	"pallet-assets/runtime-benchmarks",
-	"pallet-orderbook/runtime-benchmarks",
 	"pallet-timestamp/runtime-benchmarks",
 	"pallet-transaction-payment/runtime-benchmarks",
 	"sp-runtime/runtime-benchmarks",
 ]
-
 try-runtime = [
 	"frame-executive/try-runtime",
 	"frame-support/try-runtime",
 	"frame-system/try-runtime",
 	"frame-try-runtime/try-runtime",
+	"pallet-assets/try-runtime",
 	"pallet-aura/try-runtime",
 	"pallet-balances/try-runtime",
 	"pallet-grandpa/try-runtime",
+	"pallet-orderbook/try-runtime",
 	"pallet-sudo/try-runtime",
 	"pallet-template/try-runtime",
-	"pallet-assets/try-runtime",
-	"pallet-orderbook/try-runtime",
 	"pallet-timestamp/try-runtime",
 	"pallet-transaction-payment/try-runtime",
 	"sp-runtime/try-runtime",

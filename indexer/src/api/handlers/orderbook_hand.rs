@@ -3,6 +3,8 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Json},
+    routing::get,
+    Router,
 };
 use serde_json::json;
 use sqlx::PgPool;
@@ -48,4 +50,10 @@ pub async fn get_order(
         )
             .into_response(),
     }
+}
+
+pub async fn orderbook_routes() -> Router<AppState> {
+    Router::new()
+        .route("/api/orderbook", get(get_orderbook))
+        .route("/api/order/{id}", get(get_order))
 }

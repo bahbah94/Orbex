@@ -33,6 +33,18 @@ pub struct SubscriptionQuery {
     pub timeframes: Option<String>,
 }
 
+/// Configuration struct for unified WebSocket handler
+pub struct UnifiedSocketConfig {
+    pub socket: WebSocket,
+    pub orderbook: Arc<Mutex<OrderbookState>>,
+    pub ob_broadcast: broadcast::Sender<OrderbookSnapshot>,
+    pub candle_broadcast: broadcast::Sender<CandleUpdate>,
+    pub subscribe_orderbook: bool,
+    pub subscribe_ohlcv: bool,
+    pub symbol_filter: String,
+    pub timeframe_filter: Option<Vec<String>>,
+}
+
 pub async fn ws_unified_handler(
     ws: WebSocketUpgrade,
     Query(params): Query<SubscriptionQuery>,
@@ -46,7 +58,7 @@ pub async fn ws_unified_handler(
         .map(|tf| tf.split(',').map(|s| s.trim().to_string()).collect());
 
     ws.on_upgrade(move |socket| {
-        handle_unified_socket(
+        handle_unified_socket(UnifiedSocketConfig {
             socket,
             orderbook,
             ob_broadcast,
@@ -55,20 +67,22 @@ pub async fn ws_unified_handler(
             subscribe_ohlcv,
             symbol_filter,
             timeframe_filter,
-        )
+        })
     })
 }
 
-async fn handle_unified_socket(
-    socket: WebSocket,
-    orderbook: Arc<Mutex<OrderbookState>>,
-    ob_broadcast: broadcast::Sender<OrderbookSnapshot>,
-    candle_broadcast: broadcast::Sender<CandleUpdate>,
-    subscribe_orderbook: bool,
-    subscribe_ohlcv: bool,
-    symbol_filter: String,
-    timeframe_filter: Option<Vec<String>>,
-) {
+async fn handle_unified_socket(config: UnifiedSocketConfig) {
+    let UnifiedSocketConfig {
+        socket,
+        orderbook,
+        ob_broadcast,
+        candle_broadcast,
+        subscribe_orderbook,
+        subscribe_ohlcv,
+        symbol_filter,
+        timeframe_filter,
+    } = config;
+
     let (mut sender, mut receiver) = socket.split();
 
     info!(

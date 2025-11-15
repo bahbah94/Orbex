@@ -1,6 +1,5 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
 use std::collections::BTreeMap;
 use tokio::sync::broadcast;
 use tracing::info;
@@ -61,6 +60,7 @@ pub struct OrderInfo {
 }
 
 impl OrderbookState {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             bids: BTreeMap::new(),
@@ -170,16 +170,10 @@ impl OrderbookState {
 
         match side {
             "Buy" => {
-                self.bids
-                    .entry(price)
-                    .or_default()
-                    .push(order_id);
+                self.bids.entry(price).or_default().push(order_id);
             }
             "Sell" => {
-                self.asks
-                    .entry(price)
-                    .or_default()
-                    .push(order_id);
+                self.asks.entry(price).or_default().push(order_id);
             }
             _ => {}
         }
@@ -273,60 +267,3 @@ impl OrderbookState {
         Some((*best_bid, *best_ask))
     }
 }
-
-pub async fn process_order_filled(state: &mut OrderbookState, order_id: u64) -> Result<()> {
-    if let Some(order) = state.orders.get(&order_id) {
-        state.update_order(order_id, order.filled_quantity, "Filled")?;
-        info!("OrderFilled: {}", order_id);
-    }
-    Ok(())
-}
-
-pub async fn process_order_cancelled(state: &mut OrderbookState, order_id: u64) -> Result<()> {
-    state.cancel_order(order_id)?;
-    info!("Order {} Cancelled", order_id);
-
-    Ok(())
-}
-
-pub async fn process_order_partially_filled(
-    state: &mut OrderbookState,
-    _pool: &PgPool,
-    order_id: u64,
-    filled_quantity: u128,
-) -> Result<()> {
-    state.update_order(order_id, filled_quantity, "PartiallyFilled")?;
-    info!(
-        "📊 OrderPartiallyFilled: #{} (filled: {})",
-        order_id, filled_quantity
-    );
-
-    Ok(())
-}
-
-pub async fn process_order_place(
-    state: &mut OrderbookState,
-    order_id: u64,
-    side: &str,
-    price: u128,
-    quantity: u128,
-) -> Result<()> {
-    let order = OrderInfo {
-        order_id,
-        side: side.to_string(),
-        price,
-        quantity,
-        filled_quantity: 0,
-        status: "Open".to_string(),
-    };
-
-    state.add_order(order);
-
-    info!(
-        " OrderPlaced: #{} {} {} @ {}",
-        order_id, side, quantity, price
-    );
-
-    Ok(())
-}
-

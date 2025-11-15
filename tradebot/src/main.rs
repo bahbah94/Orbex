@@ -1,14 +1,14 @@
+use dotenvy::dotenv;
 use anyhow::{Context, Result};
-use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::sync::Arc;
-use subxt::ext::sp_core::{crypto::Ss58Codec, sr25519::Pair, Pair as PairTrait};
-use subxt::tx::PairSigner;
 use subxt::{OnlineClient, PolkadotConfig};
+use subxt_signer::sr25519::Keypair;
+use subxt_signer::sr25519::dev::{alice, bob, charlie, dave, eve, ferdie};
 use tokio::sync::{Mutex, Semaphore};
 use tracing::{info, warn};
 
@@ -50,9 +50,9 @@ use polkadot::runtime_types::pallet_orderbook::types::{OrderSide, OrderType};
 
 struct TradeBot {
     client: OnlineClient<PolkadotConfig>,
-    accounts: Vec<(String, Pair)>, // (address, keypair)
+    accounts: Vec<(String, Keypair)>, // (address, keypair)
     account_locks: HashMap<String, Arc<Mutex<()>>>, // Per-account locks
-    worker_pool: Arc<Semaphore>,   // Limits concurrent workers
+    worker_pool: Arc<Semaphore>,      // Limits concurrent workers
 }
 
 impl TradeBot {
@@ -85,26 +85,16 @@ impl TradeBot {
         })
     }
 
-    fn generate_accounts(num: usize) -> Result<Vec<(String, Pair)>> {
-        // Dev account URIs (well-known substrate test accounts)
-        let dev_uris = [
-            "//Alice",
-            "//Bob",
-            "//Charlie",
-            "//Dave",
-            "//Eve",
-            "//Ferdie",
-        ];
+    fn generate_accounts(num: usize) -> Result<Vec<(String, Keypair)>> {
+        let keypairs = [alice(), bob(), charlie(), dave(), eve(), ferdie()];
 
         let mut accounts = Vec::new();
         for i in 0..num {
-            let uri = dev_uris[i % dev_uris.len()];
-            let pair = Pair::from_string(uri, None)
-                .map_err(|e| anyhow::anyhow!("Failed to create pair from URI {}: {:?}", uri, e))?;
+            let pair = keypairs[i % keypairs.len()].clone();
 
             // Get the public key and convert to proper SS58 address
-            let public = pair.public();
-            let address = public.to_ss58check();
+            let public = pair.public_key();
+            let address = public.to_account_id().to_string();
 
             accounts.push((address, pair));
         }
@@ -112,7 +102,7 @@ impl TradeBot {
         Ok(accounts)
     }
 
-    fn map_trader_to_account(&self, trader: &str) -> &(String, Pair) {
+    fn map_trader_to_account(&self, trader: &str) -> &(String, Keypair) {
         // Hash the trader string to deterministically map to an account
         let hash: u64 = trader
             .bytes()
@@ -148,9 +138,6 @@ impl TradeBot {
         // Use Limit order type for all orders from the synthetic data
         let order_type = OrderType::Limit;
 
-        // Create a PairSigner for subxt
-        let signer = PairSigner::new(pair.clone());
-
         // Build the extrinsic with correct parameter order: side, price, quantity, order_type
         let tx = polkadot::tx().orderbook().place_order(
             order_side,
@@ -163,7 +150,7 @@ impl TradeBot {
         match self
             .client
             .tx()
-            .sign_and_submit_then_watch_default(&tx, &signer)
+            .sign_and_submit_then_watch_default(&tx, pair)
             .await
         {
             Ok(progress) => {
@@ -219,15 +206,13 @@ impl TradeBot {
 
         // Fund accounts sequentially to avoid nonce conflicts
         for (address, pair) in &self.accounts {
-            let signer = PairSigner::new(pair.clone());
-
             // Fund with ETH (asset_id = 0)
             let deposit_eth = polkadot::tx().assets().deposit(0, fund_amount);
 
             match self
                 .client
                 .tx()
-                .sign_and_submit_then_watch_default(&deposit_eth, &signer)
+                .sign_and_submit_then_watch_default(&deposit_eth, pair)
                 .await
             {
                 Ok(progress) => match progress.wait_for_finalized_success().await {
@@ -244,10 +229,7 @@ impl TradeBot {
                 },
                 Err(e) => {
                     warn!("⚠️  Failed to submit ETH deposit for {}: {}", address, e);
-                    return Err(anyhow::anyhow!(
-                        "Failed to submit ETH deposit for {}",
-                        address
-                    ));
+                    return Err(anyhow::anyhow!("Failed to submit ETH deposit for {}", address));
                 }
             }
 
@@ -257,7 +239,7 @@ impl TradeBot {
             match self
                 .client
                 .tx()
-                .sign_and_submit_then_watch_default(&deposit_usdc, &signer)
+                .sign_and_submit_then_watch_default(&deposit_usdc, pair)
                 .await
             {
                 Ok(progress) => match progress.wait_for_finalized_success().await {
@@ -278,10 +260,7 @@ impl TradeBot {
                 },
                 Err(e) => {
                     warn!("⚠️  Failed to submit USDC deposit for {}: {}", address, e);
-                    return Err(anyhow::anyhow!(
-                        "Failed to submit USDC deposit for {}",
-                        address
-                    ));
+                    return Err(anyhow::anyhow!("Failed to submit USDC deposit for {}", address));
                 }
             }
         }
@@ -432,20 +411,19 @@ async fn main() -> Result<()> {
         .parse::<usize>()
         .context("WORKER_POOL_SIZE must be a valid number")?;
 
-    let blocks_file = env::var("BLOCKS_FILE")
-        .unwrap_or_else(|_| "ETHUSDC_2025-11-12T22-08-37-339Z_synthetic_blocks.jsonl".to_string());
+    let order_data_file = env::var("ORDER_DATA_FILE")?;
 
     info!("Configuration:");
     info!("  Node URL: {}", node_url);
     info!("  Num Accounts: {}", num_accounts);
     info!("  Worker Pool Size: {}", worker_pool_size);
-    info!("  Blocks File: {}", blocks_file);
+    info!("  Order Data File: {}", order_data_file);
 
     // Initialize trade bot
     let bot = TradeBot::new(&node_url, num_accounts, worker_pool_size).await?;
 
     // Load blocks from file
-    let blocks = load_blocks(&blocks_file)?;
+    let blocks = load_blocks(&order_data_file)?;
 
     // Fund accounts if not skipped
     if env::var("SKIP_FUNDING").unwrap_or_else(|_| "0".to_string()) != "1" {

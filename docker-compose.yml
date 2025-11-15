@@ -1,7 +1,9 @@
 services:
   solochain:
-    image: solochain-node:latest
-    container_name: solochain
+    build:
+      context: .
+      dockerfile: node/Dockerfile
+    container_name: node
     command:
       - --dev
       - --rpc-cors=all
@@ -26,7 +28,7 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB_FULL_NAME}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - ./indexer/db/timescale.sql:/mnt/timescale.sql
     restart: unless-stopped
@@ -42,7 +44,7 @@ services:
       dockerfile: indexer/Dockerfile
     container_name: indexer
     depends_on:
-      db:
+      timescaledb:
         condition: service_healthy
       solochain:
         condition: service_started
@@ -52,8 +54,26 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
       SOLOCHAIN_RPC: ws://solochain:9944
+      RUST_LOG: ${RUST_LOG}
     ports:
       - "${INDEXER_PORT}:${INDEXER_PORT}"
+    restart: unless-stopped
+
+  tradebot:
+    build:
+      context: ./tradebot
+      dockerfile: Dockerfile
+    container_name: tradebot
+    depends_on:
+      solochain:
+        condition: service_started
+      indexer:
+        condition: service_started
+    environment:
+      SOLOCHAIN_RPC: ws://solochain:9944
+      RUST_LOG: ${RUST_LOG}
+      ORDER_DATA_FILE: ${ORDER_DATA_FILE}
+      NUM_ACCOUNTS: ${NUM_ACCOUNTS}
     restart: unless-stopped
 
   frontend:

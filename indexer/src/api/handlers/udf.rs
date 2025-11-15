@@ -20,24 +20,13 @@ const SUPPORTED_RESOLUTIONS: &[&str] = &["1", "5", "15", "30", "60", "240", "1D"
 
 #[derive(Debug, Deserialize)]
 pub struct QuoteQuery {
-    pub symbol: String,
+    pub _symbol: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct DepthQuery {
-    pub symbol: String,
+    pub _symbol: String,
     pub levels: Option<usize>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SearchQuery {
-    pub query: String,
-    pub limit: Option<usize>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SymbolQuery {
-    pub symbol: String,
 }
 
 #[derive(Debug, Deserialize)]

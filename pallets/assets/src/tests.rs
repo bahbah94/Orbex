@@ -1,6 +1,6 @@
 // pallets/assets/src/tests.rs
 
-use crate::{mock::*, Error, Event, ETH, USDT};
+use crate::{ETH, Error, Event, USDT, mock::*};
 use frame_support::{assert_noop, assert_ok};
 
 #[test]

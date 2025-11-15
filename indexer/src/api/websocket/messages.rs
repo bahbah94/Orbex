@@ -96,9 +96,9 @@ impl MarketDataMessage {
         MarketDataMessage::Candle(update)
     }
 
-    pub fn status(message: impl Into<String>) -> Self {
-        MarketDataMessage::Status(StatusMessage {
-            message: message.into(),
-        })
-    }
+    // pub fn status(message: impl Into<String>) -> Self {
+    //     MarketDataMessage::Status(StatusMessage {
+    //         message: message.into(),
+    //     })
+    // }
 }

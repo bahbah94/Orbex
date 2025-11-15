@@ -1,8 +1,8 @@
 use crate as pallet_orderbook;
 use frame_support::derive_impl;
 use frame_system::pallet;
-use sp_runtime::traits::parameter_types;
 use sp_runtime::BuildStorage;
+use sp_runtime::traits::parameter_types;
 
 type Block = frame_system::mocking::MockBlock<Test>;
 
@@ -41,7 +41,6 @@ impl frame_system::Config for Test {
 }
 
 impl pallet_assets::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = ();
 }
 
@@ -53,7 +52,6 @@ parameter_types! {
 }
 
 impl pallet_orderbook::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type MaxPendingOrders = MaxPendingOrders;
     type MaxCancellationOrders = MaxCancellationOrders;
     type MaxOrders = MaxOrders;

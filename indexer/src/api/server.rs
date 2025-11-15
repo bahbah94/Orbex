@@ -3,9 +3,12 @@ use crate::indexer::candle_aggregator::CandleUpdate;
 use crate::indexer::orderbook_reducer::{OrderbookSnapshot, OrderbookState};
 use axum::{routing::get, Router};
 use sqlx::PgPool;
+use std::env;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
 use tower_http::cors::{Any, CorsLayer};
+use tracing::info;
 
 pub async fn run_server(
     orderbook: Arc<Mutex<OrderbookState>>,
@@ -27,13 +30,11 @@ pub async fn run_server(
 
     let app = Router::new()
         //REST API endpoints
-        .route(
+        .nest(
             "/api/orderbook",
-            get(handlers::orderbook_hand::get_orderbook),
+            handlers::orderbook_hand::orderbook_routes().await,
         )
         .route("/api/candles", get(handlers::ohlcv_hand::get_candles))
-        // .route("/api/order/:id", get(handlers::orderbook_hand::get_order))
-        //add the udf stuff
         .nest("/udf", handlers::udf::udf_routes().await)
         //health stuff
         .route("/health", get(|| async { "OK" }))
@@ -47,14 +48,20 @@ pub async fn run_server(
                 .allow_headers(Any),
         );
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
+    let port = env::var("INDEXER_PORT")
+        .unwrap_or_else(|_| "8081".to_string())
+        .parse::<u16>()?;
+    let listener = tokio::net::TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], port))).await?;
 
-    println!("🌐 API Server: http://0.0.0.0:3000");
-    println!("🔥 WebSocket (orderbook + OHLCV): ws://0.0.0.0:3000/ws/market");
-    println!("📖 REST API:");
-    println!("   - Orderbook: http://0.0.0.0:3000/api/orderbook");
-    println!("   - Candles: http://0.0.0.0:3000/api/candles");
-    println!("   - UDF: http://0.0.0.0:3000/udf/");
+    info!("🌐 API Server: http://0.0.0.0:{}", port);
+    info!(
+        "🔥 WebSocket (orderbook + OHLCV): ws://0.0.0.0:{}/ws/market",
+        port
+    );
+    info!("📖 REST API:");
+    info!("   - Orderbook: http://0.0.0.0:{}/api/orderbook", port);
+    info!("   - Candles: http://0.0.0.0:{}/api/candles", port);
+    info!("   - UDF: http://0.0.0.0:{}/udf/", port);
 
     axum::serve(listener, app).await?;
 
