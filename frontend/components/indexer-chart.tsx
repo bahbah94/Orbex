@@ -15,7 +15,7 @@ interface IndexerChartProps {
  * Custom candlestick chart using Indexer data
  * This is a simple canvas-based implementation that displays real-time OHLCV data
  */
-export function IndexerChart({ symbol, interval = "15m" }: IndexerChartProps) {
+export function IndexerChart({ symbol, interval = "5m" }: IndexerChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [bars, setBars] = useState<TradingViewBar[]>([])
   const [loading, setLoading] = useState(true)

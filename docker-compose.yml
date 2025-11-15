@@ -86,6 +86,11 @@ services:
     environment:
       APP_ENV: ${ENV}
       SERVER_URL: http://localhost:${INDEXER_PORT}
+      NEXT_PUBLIC_NODE_WS_URL: ws://solochain:9944
+      NEXT_PUBLIC_INDEXER_URL: http://indexer:8080
+      NEXT_PUBLIC_INDEXER_WS_URL: ws://indexer:8080
+      NEXT_PUBLIC_APP_ENV: dev
+
     restart: unless-stopped
 
 volumes:

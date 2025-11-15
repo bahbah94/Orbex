@@ -6542,6 +6542,7 @@ dependencies = [
  "dotenvy",
  "flate2",
  "futures",
+ "rand 0.9.2",
  "serde",
  "serde_json",
  "subxt 0.44.0",

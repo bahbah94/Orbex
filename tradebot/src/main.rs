@@ -1,5 +1,6 @@
-use dotenvy::dotenv;
 use anyhow::{Context, Result};
+use dotenvy::dotenv;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
@@ -8,37 +9,17 @@ use std::io::{BufRead, BufReader};
 use std::sync::Arc;
 use subxt::{OnlineClient, PolkadotConfig};
 use subxt_signer::sr25519::Keypair;
-use subxt_signer::sr25519::dev::{alice, bob, charlie, dave, eve, ferdie};
-use tokio::sync::{Mutex, Semaphore};
+use subxt_signer::sr25519::dev::alice;
+use tokio::sync::Mutex;
 use tracing::{info, warn};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
-struct Transaction {
-    tx_id: String,
-    tx_type: String,
-    trader: String,
-    params: serde_json::Value,
-    timestamp: u64,
-    nonce: u64,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct Block {
-    block_number: u64,
-    timestamp: u64,
-    transactions: Vec<Transaction>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct PlaceOrderParams {
+struct OrderRecord {
+    timestamp: String,
     side: String,
     price: f64,
-    quantity: f64,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct CancelOrderParams {
-    order_id: String,
+    size: f64,
+    sequence: u64,
 }
 
 // Generate metadata at compile time
@@ -52,11 +33,10 @@ struct TradeBot {
     client: OnlineClient<PolkadotConfig>,
     accounts: Vec<(String, Keypair)>, // (address, keypair)
     account_locks: HashMap<String, Arc<Mutex<()>>>, // Per-account locks
-    worker_pool: Arc<Semaphore>,      // Limits concurrent workers
 }
 
 impl TradeBot {
-    async fn new(node_url: &str, num_accounts: usize, pool_size: usize) -> Result<Self> {
+    async fn new(node_url: &str, num_accounts: usize) -> Result<Self> {
         let client = OnlineClient::<PolkadotConfig>::from_url(node_url)
             .await
             .context("Failed to connect to node")?;
@@ -67,9 +47,6 @@ impl TradeBot {
         let accounts = Self::generate_accounts(num_accounts)?;
 
         info!("Generated {} trading accounts:", accounts.len());
-        for (addr, _) in &accounts {
-            info!("  - {}", addr);
-        }
 
         // Create a lock for each account upfront
         let mut account_locks = HashMap::new();
@@ -81,16 +58,19 @@ impl TradeBot {
             client,
             accounts,
             account_locks,
-            worker_pool: Arc::new(Semaphore::new(pool_size)),
         })
     }
 
     fn generate_accounts(num: usize) -> Result<Vec<(String, Keypair)>> {
-        let keypairs = [alice(), bob(), charlie(), dave(), eve(), ferdie()];
-
         let mut accounts = Vec::new();
-        for i in 0..num {
-            let pair = keypairs[i % keypairs.len()].clone();
+
+        let mut rng = rand::rng();
+        let mut seed = [0u8; 32];
+        for _ in 0..num {
+            rng.fill(&mut seed);
+
+            // Generate a completely random keypair
+            let pair = Keypair::from_secret_key(seed)?;
 
             // Get the public key and convert to proper SS58 address
             let public = pair.public_key();
@@ -102,17 +82,20 @@ impl TradeBot {
         Ok(accounts)
     }
 
-    fn map_trader_to_account(&self, trader: &str) -> &(String, Keypair) {
-        // Hash the trader string to deterministically map to an account
-        let hash: u64 = trader
-            .bytes()
-            .fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
-        let index = (hash as usize) % self.accounts.len();
+    fn get_account_for_order(&self, sequence: u64) -> &(String, Keypair) {
+        // Map each order to an account based on sequence number
+        let index = (sequence as usize) % self.accounts.len();
         &self.accounts[index]
     }
 
-    async fn place_order(&self, trader: &str, side: &str, price: f64, quantity: f64) -> Result<()> {
-        let (address, pair) = self.map_trader_to_account(trader);
+    async fn place_order(
+        &self,
+        sequence: u64,
+        side: &str,
+        price: f64,
+        quantity: f64,
+    ) -> Result<()> {
+        let (address, pair) = self.get_account_for_order(sequence);
 
         // Get the lock for this specific account (already created in new())
         let account_lock = self
@@ -128,8 +111,8 @@ impl TradeBot {
         let price_u128 = (price * 1_000_000.0) as u128;
         let quantity_u128 = (quantity * 1_000_000.0) as u128;
 
-        // Determine order side
-        let order_side = if side.to_lowercase() == "bid" || side.to_lowercase() == "buy" {
+        // Determine order side ("bid" = Buy, "ask" = Sell)
+        let order_side = if side.to_lowercase() == "bid" {
             OrderSide::Buy
         } else {
             OrderSide::Sell
@@ -154,11 +137,11 @@ impl TradeBot {
             .await
         {
             Ok(progress) => {
-                match progress.wait_for_finalized_success().await {
+                match progress.wait_for_finalized().await {
                     Ok(_) => {
                         info!(
-                            "✅ Order placed: {} {} @ {} (qty: {})",
-                            address, side, price, quantity
+                            "✅ Order submitted: {} {} @ {} by {}",
+                            side, quantity, price, address
                         );
                         Ok(())
                     }
@@ -183,29 +166,64 @@ impl TradeBot {
         }
     }
 
-    async fn cancel_order(
-        &self,
-        trader: &str,
-        _order_id: &str, // We don't have real order IDs from the chain
-    ) -> Result<()> {
-        let (address, _pair) = self.map_trader_to_account(trader);
-
-        // For now, we'll skip cancel operations since we don't have real order IDs
-        // from the chain matching the synthetic data
-        // If we implement this in the future, it should use sign_and_submit_then_watch_default
-        // and wait_for_finalized_success to avoid nonce issues
-        info!("⏭️  Skipping cancel order for {}", address);
-        Ok(())
-    }
-
     async fn fund_accounts(&self) -> Result<()> {
-        info!("💰 Funding accounts with ETH (asset 0) and USDC (asset 1)...");
+        info!(
+            "💰 Funding accounts with native tokens for tx fees, ETH (asset 0) and USDC (asset 1)..."
+        );
 
         // Fund amount: 1 trillion with 6 decimals = 1_000_000_000_000 * 1_000_000
         let fund_amount: u128 = 1_000_000_000_000_000_000;
 
+        // Amount of native tokens for transaction fees (e.g., 1000 units)
+        let native_token_amount: u128 = 1_000_000_000_000_000;
+
+        // Get Alice's keypair to transfer native tokens
+        let alice_pair = alice();
+
         // Fund accounts sequentially to avoid nonce conflicts
         for (address, pair) in &self.accounts {
+            // First, transfer native tokens from Alice for transaction fees
+            let dest = pair.public_key().to_address();
+
+            let transfer_tx = polkadot::tx()
+                .balances()
+                .transfer_allow_death(dest, native_token_amount);
+
+            match self
+                .client
+                .tx()
+                .sign_and_submit_then_watch_default(&transfer_tx, &alice_pair)
+                .await
+            {
+                Ok(progress) => match progress.wait_for_finalized().await {
+                    Ok(_) => {
+                        info!(
+                            "✅ Transferred {} native tokens to {} for tx fees",
+                            native_token_amount, address
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            "⚠️  Native token transfer failed (finalization) for {}: {}",
+                            address, e
+                        );
+                        return Err(anyhow::anyhow!(
+                            "Native token transfer failed for {}",
+                            address
+                        ));
+                    }
+                },
+                Err(e) => {
+                    warn!(
+                        "⚠️  Failed to submit native token transfer for {}: {}",
+                        address, e
+                    );
+                    return Err(anyhow::anyhow!(
+                        "Failed to submit native token transfer for {}",
+                        address
+                    ));
+                }
+            }
             // Fund with ETH (asset_id = 0)
             let deposit_eth = polkadot::tx().assets().deposit(0, fund_amount);
 
@@ -215,7 +233,7 @@ impl TradeBot {
                 .sign_and_submit_then_watch_default(&deposit_eth, pair)
                 .await
             {
-                Ok(progress) => match progress.wait_for_finalized_success().await {
+                Ok(progress) => match progress.wait_for_finalized().await {
                     Ok(_) => {
                         info!("✅ Funded {} with {} ETH", address, fund_amount / 1_000_000);
                     }
@@ -229,7 +247,10 @@ impl TradeBot {
                 },
                 Err(e) => {
                     warn!("⚠️  Failed to submit ETH deposit for {}: {}", address, e);
-                    return Err(anyhow::anyhow!("Failed to submit ETH deposit for {}", address));
+                    return Err(anyhow::anyhow!(
+                        "Failed to submit ETH deposit for {}",
+                        address
+                    ));
                 }
             }
 
@@ -242,7 +263,7 @@ impl TradeBot {
                 .sign_and_submit_then_watch_default(&deposit_usdc, pair)
                 .await
             {
-                Ok(progress) => match progress.wait_for_finalized_success().await {
+                Ok(progress) => match progress.wait_for_finalized().await {
                     Ok(_) => {
                         info!(
                             "✅ Funded {} with {} USDC",
@@ -260,7 +281,10 @@ impl TradeBot {
                 },
                 Err(e) => {
                     warn!("⚠️  Failed to submit USDC deposit for {}: {}", address, e);
-                    return Err(anyhow::anyhow!("Failed to submit USDC deposit for {}", address));
+                    return Err(anyhow::anyhow!(
+                        "Failed to submit USDC deposit for {}",
+                        address
+                    ));
                 }
             }
         }
@@ -269,66 +293,40 @@ impl TradeBot {
         Ok(())
     }
 
-    async fn process_transaction(&self, tx: &Transaction) -> Result<()> {
-        match tx.tx_type.as_str() {
-            "place_order" => {
-                let params: PlaceOrderParams = serde_json::from_value(tx.params.clone())
-                    .context("Failed to parse place_order params")?;
-
-                self.place_order(&tx.trader, &params.side, params.price, params.quantity)
-                    .await?;
-            }
-            "cancel_order" => {
-                let params: CancelOrderParams = serde_json::from_value(tx.params.clone())
-                    .context("Failed to parse cancel_order params")?;
-
-                self.cancel_order(&tx.trader, &params.order_id).await?;
-            }
-            _ => {
-                warn!("Unknown transaction type: {}", tx.tx_type);
-            }
-        }
-        Ok(())
+    async fn process_order(&self, order: &OrderRecord) -> Result<()> {
+        self.place_order(order.sequence, &order.side, order.price, order.size)
+            .await
     }
 
-    async fn replay_transactions(self: Arc<Self>, blocks: Vec<Block>) -> Result<()> {
-        // Flatten all transactions from all blocks into a single list
-        let all_txs: Vec<Transaction> = blocks
-            .into_iter()
-            .flat_map(|block| block.transactions)
-            .collect();
-
-        info!(
-            "🚀 Starting transaction replay with {} transactions",
-            all_txs.len()
-        );
-        info!(
-            "👷 Worker pool size: {}",
-            self.worker_pool.available_permits()
-        );
+    async fn replay_orders(self: Arc<Self>, orders: Vec<OrderRecord>) -> Result<()> {
+        info!("🚀 Starting order replay with {} orders", orders.len());
 
         let mut handles = Vec::new();
 
-        // Spawn a worker for each transaction
-        for tx in all_txs {
+        // Spawn a worker for each order
+        for order in orders {
+            if order.size <= 0.0 {
+                warn!(
+                    "⚠️  Skipping order with non-positive size: seq {} size {}",
+                    order.sequence, order.size
+                );
+                continue;
+            }
             // Acquire a permit from the worker pool (blocks if pool is saturated)
-            let permit = self.worker_pool.clone().acquire_owned().await.unwrap();
             let bot = self.clone();
 
             // Spawn worker task
             let handle = tokio::spawn(async move {
-                let result = bot.process_transaction(&tx).await;
+                let result = bot.process_order(&order).await;
 
                 // Log result
                 match &result {
                     Ok(_) => {}
                     Err(e) => {
-                        warn!("Failed to process tx {}: {}", tx.tx_id, e);
+                        warn!("Failed to process order seq {}: {}", order.sequence, e);
                     }
                 }
 
-                // Permit is automatically released when dropped
-                drop(permit);
                 result
             });
 
@@ -350,21 +348,21 @@ impl TradeBot {
         }
 
         info!(
-            "✅ Completed transaction replay: {} submitted, {} failed",
+            "✅ Completed order replay: {} submitted, {} failed",
             submitted, failed
         );
         Ok(())
     }
 }
 
-fn load_blocks(file_path: &str) -> Result<Vec<Block>> {
-    info!("📂 Loading blocks from: {}", file_path);
+fn load_orders(file_path: &str) -> Result<Vec<OrderRecord>> {
+    info!("📂 Loading orders from: {}", file_path);
 
     let file =
         File::open(file_path).with_context(|| format!("Failed to open file: {}", file_path))?;
 
     let reader = BufReader::new(file);
-    let mut blocks = Vec::new();
+    let mut orders = Vec::new();
 
     for (line_num, line) in reader.lines().enumerate() {
         let line = line.with_context(|| format!("Failed to read line {}", line_num + 1))?;
@@ -373,14 +371,14 @@ fn load_blocks(file_path: &str) -> Result<Vec<Block>> {
             continue;
         }
 
-        let block: Block = serde_json::from_str(&line)
-            .with_context(|| format!("Failed to parse block at line {}", line_num + 1))?;
+        let order: OrderRecord = serde_json::from_str(&line)
+            .with_context(|| format!("Failed to parse order at line {}", line_num + 1))?;
 
-        blocks.push(block);
+        orders.push(order);
     }
 
-    info!("✅ Loaded {} blocks", blocks.len());
-    Ok(blocks)
+    info!("✅ Loaded {} orders", orders.len());
+    Ok(orders)
 }
 
 #[tokio::main]
@@ -406,24 +404,18 @@ async fn main() -> Result<()> {
         .parse::<usize>()
         .context("NUM_ACCOUNTS must be a valid number")?;
 
-    let worker_pool_size = env::var("WORKER_POOL_SIZE")
-        .unwrap_or_else(|_| "10".to_string())
-        .parse::<usize>()
-        .context("WORKER_POOL_SIZE must be a valid number")?;
-
     let order_data_file = env::var("ORDER_DATA_FILE")?;
 
     info!("Configuration:");
     info!("  Node URL: {}", node_url);
     info!("  Num Accounts: {}", num_accounts);
-    info!("  Worker Pool Size: {}", worker_pool_size);
     info!("  Order Data File: {}", order_data_file);
 
     // Initialize trade bot
-    let bot = TradeBot::new(&node_url, num_accounts, worker_pool_size).await?;
+    let bot = TradeBot::new(&node_url, num_accounts).await?;
 
-    // Load blocks from file
-    let blocks = load_blocks(&order_data_file)?;
+    // Load orders from file
+    let orders = load_orders(&order_data_file)?;
 
     // Fund accounts if not skipped
     if env::var("SKIP_FUNDING").unwrap_or_else(|_| "0".to_string()) != "1" {
@@ -435,8 +427,8 @@ async fn main() -> Result<()> {
     // Wrap bot in Arc for shared ownership across workers
     let bot = Arc::new(bot);
 
-    // Replay all transactions with worker pool
-    bot.replay_transactions(blocks).await?;
+    // Replay all orders with worker pool
+    bot.replay_orders(orders).await?;
 
     info!("🎉 Trade bot completed successfully!");
 

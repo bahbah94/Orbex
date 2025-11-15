@@ -136,7 +136,7 @@ export default function TestIndexerPage() {
               <p className="text-sm text-muted-foreground">Real-time OHLCV data</p>
             </div>
             <div className="h-[400px]">
-              <IndexerChart symbol="ETH/USDC" interval="15m" />
+              <IndexerChart symbol="ETH/USDC" interval="1m" />
             </div>
           </div>
 
