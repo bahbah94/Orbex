@@ -20,24 +20,13 @@ const SUPPORTED_RESOLUTIONS: &[&str] = &["1", "5", "15", "30", "60", "240", "1D"
 
 #[derive(Debug, Deserialize)]
 pub struct QuoteQuery {
-    pub symbol: String,
+    pub _symbol: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct DepthQuery {
-    pub symbol: String,
+    pub _symbol: String,
     pub levels: Option<usize>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SearchQuery {
-    pub query: String,
-    pub limit: Option<usize>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SymbolQuery {
-    pub symbol: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -78,8 +67,8 @@ pub async fn udf_quotes(
                 .map(|orders| orders.len())
                 .unwrap_or(0);
 
-            let spread = best_ask.saturating_sub(best_bid);
-            let mid_price = (best_bid.saturating_add(best_ask)) / 2;
+            let spread = best_ask - best_bid;
+            let mid_price = (best_bid + best_ask) / rust_decimal::Decimal::from(2);
 
             Json(json!({
                 "s": "ok",
@@ -284,7 +273,7 @@ pub async fn udf_depth(
         .iter()
         .map(|(price, count)| {
             // Calculate total quantity at this price level
-            let qty: u128 = ob
+            let qty: rust_decimal::Decimal = ob
                 .bids
                 .get(price)
                 .unwrap_or(&vec![])
@@ -292,7 +281,7 @@ pub async fn udf_depth(
                 .filter_map(|id| {
                     ob.orders
                         .get(id)
-                        .map(|o| o.quantity.saturating_sub(o.filled_quantity))
+                        .map(|o| o.quantity - o.filled_quantity)
                 })
                 .sum();
 
@@ -304,15 +293,15 @@ pub async fn udf_depth(
         .iter()
         .map(|(price, count)| {
             // Calculate total quantity at this price level
-            let qty: u128 = ob
-                .bids
+            let qty: rust_decimal::Decimal = ob
+                .asks
                 .get(price)
                 .unwrap_or(&vec![])
                 .iter()
                 .filter_map(|id| {
                     ob.orders
                         .get(id)
-                        .map(|o| o.quantity.saturating_sub(o.filled_quantity))
+                        .map(|o| o.quantity - o.filled_quantity)
                 })
                 .sum();
 

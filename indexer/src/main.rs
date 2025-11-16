@@ -1,5 +1,5 @@
 use anyhow::Result;
-use dotenv::dotenv;
+use dotenvy::dotenv;
 use std::env;
 use tokio::sync::broadcast;
 use tracing::info;
@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"))
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .with_target(true)
         .with_thread_ids(false)
@@ -32,7 +32,14 @@ async fn main() -> Result<()> {
         .init();
 
     let node_url = env::var("NODE_WS_URL").unwrap_or_else(|_| "ws://127.0.0.1:9944".to_string());
-    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let db_url = format!(
+        "postgres://{}:{}@{}:{}/{}",
+        env::var("POSTGRES_USER").unwrap_or_else(|_| "postgres".to_string()),
+        env::var("POSTGRES_PASSWORD").unwrap_or_else(|_| "password".to_string()),
+        env::var("POSTGRES_HOST").unwrap_or_else(|_| "localhost".to_string()),
+        env::var("POSTGRES_PORT").unwrap_or_else(|_| "5432".to_string()),
+        env::var("POSTGRES_DB").unwrap_or_else(|_| "orbex".to_string()),
+    );
 
     info!("🚀 Starting Orderbook Indexer");
     info!("📡 Node URL: {}", node_url);

@@ -1,0 +1,13 @@
+.git
+target
+**/target
+**/node_modules
+**/.next
+**/.pnpm-store
+**/.turbo
+**/.cache
+**/dist
+**/build
+.env
+.env.*
+docker-compose.yml

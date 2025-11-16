@@ -1,7 +1,7 @@
 # Database configuration
 export DB_HOST := "localhost"
 export DB_PORT := "5432"
-export DB_NAME := "polkadot_clob"
+export DB_NAME := "orbex"
 export DB_USER := "postgres"
 export DB_PASSWORD := "password"
 

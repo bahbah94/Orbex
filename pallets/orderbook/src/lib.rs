@@ -31,7 +31,7 @@ pub mod pallet {
     };
 
     use assets::{ETH, USDT};
-    use frame_support::{pallet_prelude::*, Blake2_128Concat};
+    use frame_support::{Blake2_128Concat, pallet_prelude::*};
     use frame_system::pallet_prelude::{OriginFor, *};
     use pallet_assets as assets;
     use sp_core::Get;
@@ -44,8 +44,6 @@ pub mod pallet {
 
     #[pallet::config]
     pub trait Config: frame_system::Config + pallet_assets::Config {
-        type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
         // maximum orders at any price level not sure if needed. this will be on the blockOrders cache
         #[pallet::constant]
         type MaxPendingOrders: Get<u32>;
@@ -295,23 +293,19 @@ pub mod pallet {
 
             // here we are matching first only from the temp cache
             let (pending_trades, unmatched) =
-                match match_pending_internal(pending_bids, pending_asks, &mut orders_map) {
-                    Ok(result) => result,
-                    Err(_) => (Vec::new(), Vec::new()),
-                };
+                match_pending_internal(pending_bids, pending_asks, &mut orders_map)
+                    .unwrap_or_default();
 
             all_trades.extend(pending_trades);
 
             if !unmatched.is_empty() {
-                let persistent_trades = match match_persistent_storage(
+                let persistent_trades = match_persistent_storage(
                     &mut persistent_bids,
                     &mut persistent_asks,
                     unmatched,
                     &mut orders_map,
-                ) {
-                    Ok(trades) => trades,
-                    Err(_) => Vec::new(),
-                };
+                )
+                .unwrap_or_default();
 
                 all_trades.extend(persistent_trades);
             }

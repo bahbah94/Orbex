@@ -12,9 +12,9 @@ CREATE TABLE IF NOT EXISTS trades (
     sell_order_id BIGINT NOT NULL,
 
     -- Trade details
-    price NUMERIC(38, 0) NOT NULL,  -- u128 from on-chain
-    quantity NUMERIC(38, 0) NOT NULL,  -- u128 from on-chain
-    value NUMERIC(38, 0) NOT NULL,  -- price * quantity
+    price NUMERIC(20, 6) NOT NULL,  -- Decimal price with 6 decimal places
+    quantity NUMERIC(20, 6) NOT NULL,  -- Decimal quantity with 6 decimal places
+    value NUMERIC(40, 12) NOT NULL,  -- price * quantity (needs more precision)
     symbol TEXT NOT NULL,  -- Trading pair symbol (e.g., "DOT/USDT")
 
     -- Metadata
@@ -36,5 +36,3 @@ CREATE INDEX IF NOT EXISTS idx_trades_seller ON trades(seller);
 
 CREATE INDEX IF NOT EXISTS idx_trades_buy_order_id ON trades(buy_order_id);
 CREATE INDEX IF NOT EXISTS idx_trades_sell_order_id ON trades(sell_order_id);
-
-

@@ -33,7 +33,6 @@ impl frame_system::Config for Test {
 }
 
 impl pallet_assets::Config for Test {
-    type RuntimeEvent = RuntimeEvent;
     type WeightInfo = pallet_assets::weights::SubstrateWeight<Test>;
 }
 

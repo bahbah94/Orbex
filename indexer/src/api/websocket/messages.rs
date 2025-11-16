@@ -1,6 +1,7 @@
 use crate::indexer::candle_aggregator::CandleUpdate;
 use crate::indexer::orderbook_reducer::OrderbookSnapshot;
 /// Unified WebSocket message types for orderbook and OHLCV updates
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 /// Unified message envelope for all websocket updates
@@ -64,24 +65,37 @@ pub struct StatusMessage {
 
 impl MarketDataMessage {
     /// Create orderbook message from OrderbookSnapshot (Hyperliquid L2 book format)
+    /// with cumulative depth: bids accumulate as prices go down, asks accumulate as prices go up
     pub fn orderbook_from_snapshot(symbol: String, snapshot: OrderbookSnapshot) -> Self {
+        // For bids: accumulate quantities as we go down in price (highest to lowest)
+        // Bids are already sorted from highest to lowest
+        let mut cumulative_bid_qty = Decimal::ZERO;
         let bids: Vec<WsPriceLevel> = snapshot
             .bids
             .into_iter()
-            .map(|level| WsPriceLevel {
-                px: level.price.to_string(),
-                sz: level.total_quantity.to_string(),
-                n: level.order_count,
+            .map(|level| {
+                cumulative_bid_qty += level.total_quantity;
+                WsPriceLevel {
+                    px: level.price.to_string(),
+                    sz: cumulative_bid_qty.to_string(),
+                    n: level.order_count,
+                }
             })
             .collect();
 
+        // For asks: accumulate quantities as we go up in price (lowest to highest)
+        // Asks are already sorted from lowest to highest
+        let mut cumulative_ask_qty = Decimal::ZERO;
         let asks: Vec<WsPriceLevel> = snapshot
             .asks
             .into_iter()
-            .map(|level| WsPriceLevel {
-                px: level.price.to_string(),
-                sz: level.total_quantity.to_string(),
-                n: level.order_count,
+            .map(|level| {
+                cumulative_ask_qty += level.total_quantity;
+                WsPriceLevel {
+                    px: level.price.to_string(),
+                    sz: cumulative_ask_qty.to_string(),
+                    n: level.order_count,
+                }
             })
             .collect();
 
@@ -94,11 +108,5 @@ impl MarketDataMessage {
 
     pub fn candle(update: CandleUpdate) -> Self {
         MarketDataMessage::Candle(update)
-    }
-
-    pub fn status(message: impl Into<String>) -> Self {
-        MarketDataMessage::Status(StatusMessage {
-            message: message.into(),
-        })
     }
 }

@@ -1,6 +1,7 @@
 use crate::indexer::candle_aggregator::CandleAggregator;
 use crate::indexer::runtime::TradeExecuted;
 use anyhow::Result;
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 use tracing::info;
 
@@ -22,13 +23,18 @@ pub struct TradeData {
     pub sell_order_id: u128,
     pub buyer: String,
     pub seller: String,
-    pub price: u128,
-    pub quantity: u128,
+    pub price: Decimal,
+    pub quantity: Decimal,
 }
 
 impl TradeData {
     /// Parse trade data from a TradeExecuted event using generated types
+    /// Converts u128 values (in 10^6 representation) to Decimal
     pub fn from_typed_event(event: &TradeExecuted, block_number: u32) -> Self {
+        // Convert u128 to Decimal by dividing by 10^6
+        let price = Decimal::from(event.price) / Decimal::from(1_000_000);
+        let quantity = Decimal::from(event.quantity) / Decimal::from(1_000_000);
+
         Self {
             trade_id: event.trade_id as u128,
             block_number,
@@ -36,14 +42,14 @@ impl TradeData {
             sell_order_id: event.sell_order_id as u128,
             buyer: format!("0x{}", hex::encode(event.buyer.0)),
             seller: format!("0x{}", hex::encode(event.seller.0)),
-            price: event.price,
-            quantity: event.quantity,
+            price,
+            quantity,
         }
     }
 
     /// Calculate trade value (price * quantity)
-    pub fn value(&self) -> u128 {
-        self.price.saturating_mul(self.quantity)
+    pub fn value(&self) -> Decimal {
+        self.price * self.quantity
     }
 }
 
@@ -71,8 +77,7 @@ pub async fn process_trade(
     sqlx::query(
         "INSERT INTO trades
         (trade_id, block_number, buy_order_id, sell_order_id, buyer, seller, price, quantity, value, symbol)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        ON CONFLICT (trade_id) DO NOTHING",
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
     )
     .bind(trade.trade_id as i64)
     .bind(trade.block_number as i64)
@@ -80,9 +85,9 @@ pub async fn process_trade(
     .bind(trade.sell_order_id as i64)
     .bind(&trade.buyer)
     .bind(&trade.seller)
-    .bind(trade.price as i64)
-    .bind(trade.quantity as i64)
-    .bind(value as i64)
+    .bind(trade.price)
+    .bind(trade.quantity)
+    .bind(value)
     .bind(SYMBOL)
     .execute(ctx.pool)
     .await?;

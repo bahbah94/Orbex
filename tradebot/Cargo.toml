@@ -1,5 +1,5 @@
 [package]
-name = "tradebot"
+name = "orbex-tradebot"
 version = "0.1.0"
 license.workspace = true
 authors.workspace = true
@@ -8,13 +8,15 @@ repository.workspace = true
 edition.workspace = true
 
 [dependencies]
-subxt = { version = "0.37", features = ["substrate-compat"] }
-tokio = { version = "1", features = ["full"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-anyhow = "1"
-dotenv = "0.15"
-flate2 = "1"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-futures = "0.3"
+dotenvy = { workspace = true }
+anyhow = { workspace = true }
+flate2 = "1.1.5"
+futures = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+subxt = { workspace = true }
+subxt-signer = { workspace = true, features = ["sr25519", "subxt"] }
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+rand = { version = "0.9.2" }

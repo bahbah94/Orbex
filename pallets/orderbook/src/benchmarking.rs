@@ -4,8 +4,8 @@ use frame_benchmarking::v2::*;
 #[benchmarks]
 mod benchmarks {
     use super::*;
-    use crate::types::{OrderSide, OrderType};
     use crate::Pallet as Orderbook;
+    use crate::types::{OrderSide, OrderType};
     use crate::{Call, Config, Pallet};
     use frame_support::assert_ok;
     use frame_support::traits::Hooks;

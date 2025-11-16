@@ -15,10 +15,12 @@ This project implements a fully functional orderbook-based DEX on Substrate, fea
 ## Architecture
 
 ### Two-Phase Design
+
 1. **Order Submission** (during block): Orders validated and queued in temporary cache
 2. **Batch Matching** (on_finalize): All orders matched once, funds settled, cache cleared
 
 ### Benefits
+
 - ✅ Constant-time order submission (no matching during extrinsic)
 - ✅ Single matching pass per block (more efficient than per-order matching)
 - ✅ Better price discovery (orders within same block match first)
@@ -31,12 +33,14 @@ This project implements a fully functional orderbook-based DEX on Substrate, fea
 Manages user balances for trading assets (USDT and ETH).
 
 **Key Features:**
+
 - Deposit/withdraw funds
 - Lock funds for active orders
 - Unlock funds for cancellations
 - Transfer locked funds for trade settlement
 
 **Storage:**
+
 - `FreeBalance`: Available user balances
 - `LockedBalance`: Funds locked in active orders
 
@@ -45,6 +49,7 @@ Manages user balances for trading assets (USDT and ETH).
 Core DEX functionality with orderbook matching engine.
 
 **Key Features:**
+
 - Place limit and market orders
 - Cancel pending orders
 - Automatic batch matching at block finalization
@@ -53,17 +58,18 @@ Core DEX functionality with orderbook matching engine.
 - TTL-based order expiry
 
 **Storage:**
+
 - **Persistent:**
   - `Orders`: All order details
   - `Trades`: Trade history
   - `Bids`/`Asks`: Active orderbook (price → order IDs)
   - `UserOrders`: User's order list
-  
 - **Temporary Cache (cleared each block):**
   - `PendingBids`/`PendingAsks`: Orders submitted this block
   - `PendingCancellations`: Cancellation requests
 
 **Extrinsics:**
+
 - `place_order(side, price, quantity, order_type)`: Submit a new order
 - `cancel_order(order_id)`: Cancel an existing order
 
@@ -72,6 +78,7 @@ Core DEX functionality with orderbook matching engine.
 Pure matching logic separated from pallet for clarity.
 
 **Functions:**
+
 - `match_pending_internal`: Match pending orders amongst themselves
 - `match_with_persistent`: Match unmatched orders with persistent orderbook
 - `match_buy_order`/`match_sell_order`: Core matching logic with price-time priority
@@ -138,7 +145,6 @@ on_finalize():
   1. Match pending orders
      → Bob's sell @ 98 matches Alice's buy @ 100
      → Execute at maker price: 100 USDT (Alice's limit)
-  
   2. Settle trade
      → transfer_locked(Alice → Bob, USDT, 1000)
      → transfer_locked(Bob → Alice, ETH, 10)
@@ -153,6 +159,7 @@ Final State:
 ## Types
 
 ### Order
+
 ```rust
 pub struct Order<T: Config> {
     pub order_id: OrderId,
@@ -168,6 +175,7 @@ pub struct Order<T: Config> {
 ```
 
 ### Trade
+
 ```rust
 pub struct Trade<T: Config> {
     pub trade_id: TradeId,
@@ -191,13 +199,13 @@ cargo build --release
 ### Run Development Chain
 
 ```sh
-./target/release/solochain-template-node --dev
+./target/release/orbex-node --dev
 ```
 
 ### Purge Chain State
 
 ```sh
-./target/release/solochain-template-node purge-chain --dev
+./target/release/orbex-node purge-chain --dev
 ```
 
 ### Connect with Polkadot-JS Apps

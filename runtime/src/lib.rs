@@ -11,9 +11,8 @@ pub mod configs;
 extern crate alloc;
 use alloc::vec::Vec;
 use sp_runtime::{
-    generic, impl_opaque_keys,
+    MultiAddress, MultiSignature, generic, impl_opaque_keys,
     traits::{BlakeTwo256, IdentifyAccount, Verify},
-    MultiAddress, MultiSignature,
 };
 #[cfg(feature = "std")]
 use sp_version::NativeVersion;
@@ -61,8 +60,8 @@ impl_opaque_keys! {
 // https://docs.substrate.io/main-docs/build/upgrade#runtime-versioning
 #[sp_version::runtime_version]
 pub const VERSION: RuntimeVersion = RuntimeVersion {
-    spec_name: alloc::borrow::Cow::Borrowed("solochain-template-runtime"),
-    impl_name: alloc::borrow::Cow::Borrowed("solochain-template-runtime"),
+    spec_name: alloc::borrow::Cow::Borrowed("orbex-runtime"),
+    impl_name: alloc::borrow::Cow::Borrowed("orbex-runtime"),
     authoring_version: 1,
     // The version of the runtime specification. A full node will not attempt to use its native
     //   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
@@ -151,6 +150,7 @@ pub type BlockId = generic::BlockId<Block>;
 
 /// The `TransactionExtension` to the basic transaction logic.
 pub type TxExtension = (
+    frame_system::AuthorizeCall<Runtime>,
     frame_system::CheckNonZeroSender<Runtime>,
     frame_system::CheckSpecVersion<Runtime>,
     frame_system::CheckTxVersion<Runtime>,

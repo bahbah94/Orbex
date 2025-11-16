@@ -1,13 +1,13 @@
 use crate::{
-    benchmarking::{inherent_benchmark_data, RemarkBuilder, TransferKeepAliveBuilder},
+    benchmarking::{RemarkBuilder, TransferKeepAliveBuilder, inherent_benchmark_data},
     chain_spec,
     cli::{Cli, Subcommand},
     service,
 };
 use frame_benchmarking_cli::{BenchmarkCmd, ExtrinsicFactory, SUBSTRATE_REFERENCE_HARDWARE};
+use orbex_runtime::{Block, EXISTENTIAL_DEPOSIT};
 use sc_cli::SubstrateCli;
 use sc_service::PartialComponents;
-use solochain_template_runtime::{Block, EXISTENTIAL_DEPOSIT};
 use sp_keyring::Sr25519Keyring;
 
 impl SubstrateCli for Cli {
@@ -52,6 +52,7 @@ pub fn run() -> sc_cli::Result<()> {
 
     match &cli.subcommand {
         Some(Subcommand::Key(cmd)) => cmd.run(&cli),
+        #[allow(deprecated)]
         Some(Subcommand::BuildSpec(cmd)) => {
             let runner = cli.create_runner(cmd)?;
             runner.sync_run(|config| cmd.run(config.chain_spec, config.network))
@@ -67,6 +68,10 @@ pub fn run() -> sc_cli::Result<()> {
                 } = service::new_partial(&config)?;
                 Ok((cmd.run(client, import_queue), task_manager))
             })
+        }
+        Some(Subcommand::ExportChainSpec(cmd)) => {
+            let chain_spec = cli.load_spec(&cmd.chain)?;
+            cmd.run(chain_spec)
         }
         Some(Subcommand::ExportBlocks(cmd)) => {
             let runner = cli.create_runner(cmd)?;
@@ -158,8 +163,9 @@ pub fn run() -> sc_cli::Result<()> {
                         } = service::new_partial(&config)?;
                         let db = backend.expose_db();
                         let storage = backend.expose_storage();
+                        let shared_cache = backend.expose_shared_trie_cache();
 
-                        cmd.run(config, client, db, storage)
+                        cmd.run(config, client, db, storage, shared_cache)
                     }
                     BenchmarkCmd::Overhead(cmd) => {
                         let PartialComponents { client, .. } = service::new_partial(&config)?;
@@ -201,18 +207,19 @@ pub fn run() -> sc_cli::Result<()> {
         None => {
             let runner = cli.create_runner(&cli.run)?;
             runner.run_node_until_exit(|config| async move {
-                match config.network.network_backend.unwrap_or_default() {
-					sc_network::config::NetworkBackendType::Libp2p => service::new_full::<
-						sc_network::NetworkWorker<
-							solochain_template_runtime::opaque::Block,
-							<solochain_template_runtime::opaque::Block as sp_runtime::traits::Block>::Hash,
-						>,
-					>(config)
-					.map_err(sc_cli::Error::Service),
-					sc_network::config::NetworkBackendType::Litep2p =>
-						service::new_full::<sc_network::Litep2pNetworkBackend>(config)
-							.map_err(sc_cli::Error::Service),
-				}
+                match config.network.network_backend {
+                    sc_network::config::NetworkBackendType::Libp2p => service::new_full::<
+                        sc_network::NetworkWorker<
+                            orbex_runtime::opaque::Block,
+                            <orbex_runtime::opaque::Block as sp_runtime::traits::Block>::Hash,
+                        >,
+                    >(config)
+                    .map_err(sc_cli::Error::Service),
+                    sc_network::config::NetworkBackendType::Litep2p => {
+                        service::new_full::<sc_network::Litep2pNetworkBackend>(config)
+                            .map_err(sc_cli::Error::Service)
+                    }
+                }
             })
         }
     }
