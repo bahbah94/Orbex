@@ -1,5 +1,5 @@
-use sc_service::ChainType;
 use orbex_runtime::WASM_BINARY;
+use sc_service::ChainType;
 
 /// Specialized `ChainSpec`. This is a specialization of the general Substrate ChainSpec type.
 pub type ChainSpec = sc_service::GenericChainSpec;

@@ -1,5 +1,5 @@
-use dotenvy::dotenv;
 use anyhow::Result;
+use dotenvy::dotenv;
 use std::env;
 use tokio::sync::broadcast;
 use tracing::info;

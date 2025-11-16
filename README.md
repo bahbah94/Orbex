@@ -64,7 +64,6 @@ Core DEX functionality with orderbook matching engine.
   - `Trades`: Trade history
   - `Bids`/`Asks`: Active orderbook (price → order IDs)
   - `UserOrders`: User's order list
-
 - **Temporary Cache (cleared each block):**
   - `PendingBids`/`PendingAsks`: Orders submitted this block
   - `PendingCancellations`: Cancellation requests
@@ -146,7 +145,6 @@ on_finalize():
   1. Match pending orders
      → Bob's sell @ 98 matches Alice's buy @ 100
      → Execute at maker price: 100 USDT (Alice's limit)
-
   2. Settle trade
      → transfer_locked(Alice → Bob, USDT, 1000)
      → transfer_locked(Bob → Alice, ETH, 10)
