@@ -37,26 +37,52 @@ Orders submitted during a block are queued in a temporary cache. At block finali
 
 ### Setup
 
-1. **Start the stack**
+1. Copy the env file:
 
 ```bash
-docker-compose up -d
+cp .env.example .env
 ```
 
-This launches the Substrate node, PostgreSQL with TimescaleDB, indexer, and supporting services.
+2. Start the DB:
 
-2. **Connect to the chain**
+```bash
+just db-setup
+```
+
+3. Launch the node:
+
+  ```bash
+  cargo run --release --bin orbex-node -- --dev --tmp
+  ```
+
+4. Start the indexer:
+
+  ```bash
+  cargo run --release --bin orbex-indexer
+  ```
+
+5. Start the trade bot:
+
+  ```bash
+  cargo run --release --bin orbex-trade-bot
+  ```
+
+This launches the Substrate node, PostgreSQL with TimescaleDB, indexer, and the trade bot.
+
+6. **Connect to the chain**
 
 Visit the [Polkadot/Substrate Portal](https://polkadot.js.org/apps/#/explorer?rpc=ws://localhost:9944) and point to `ws://localhost:9944`.
 
-3. **Generate test orders**
+7. **Start the frontend**
 
 ```bash
-# Load synthetic orders and fund trading accounts
-docker-compose exec bot cargo run --release -- \
-  --order-data-file /data/orders.jsonl \
-  --num-accounts 6
+cd frontend
+pnpm install
+cp .env.example .env
+pnpm dev
 ```
+
+Open `http://localhost:3000/test-indexer` to access the Orbex DEX frontend.
 
 ## Components
 
@@ -122,26 +148,20 @@ Synthetic order generator for load testing and market simulation.
 - Per-account locking prevents nonce conflicts
 - Graceful error handling and logging
 
-**Usage**
-
-```bash
-docker-compose exec bot cargo run --release -- \
-  --order-data-file orders.jsonl \
-  --num-accounts 6
-```
-
-Set `SKIP_FUNDING=1` to skip account initialization for subsequent runs.
-
 ## Configuration
 
 ### Environment Variables
 
 ```
 NODE_WS_URL=ws://127.0.0.1:9944          # Substrate node endpoint
-NUM_ACCOUNTS=6                             # Number of trading accounts
-ORDER_DATA_FILE=orders.jsonl               # Order file path
-SKIP_FUNDING=0                             # Skip account funding if 1
-DATABASE_URL=postgresql://user:pass@db    # TimescaleDB connection
+NUM_ACCOUNTS=20                             # Number of trading accounts
+ORDER_DATA_FILE=ethusdt.jsonl               # Order file path
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=password
+POSTGRES_DB=orbex
+ENV=dev
+RUST_LOG=info
+INDEXER_PORT=8080
 ```
 
 ### Runtime Config
@@ -179,14 +199,14 @@ Access TimescaleDB directly:
 
 ```sql
 -- Query 1m candles
-SELECT * FROM one_minute_candles 
-WHERE symbol = 'ETH/USDT' 
+SELECT * FROM one_minute_candles
+WHERE symbol = 'ETH/USDT'
 AND bucket >= NOW() - INTERVAL '1 hour'
 ORDER BY bucket DESC;
 
 -- Query aggregated data
-SELECT bucket, high, low, volume FROM one_day_candles 
-WHERE symbol = 'ETH/USDT' 
+SELECT bucket, high, low, volume FROM one_day_candles
+WHERE symbol = 'ETH/USDT'
 ORDER BY bucket DESC LIMIT 30;
 ```
 
