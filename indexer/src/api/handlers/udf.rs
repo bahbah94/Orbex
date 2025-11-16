@@ -278,11 +278,7 @@ pub async fn udf_depth(
                 .get(price)
                 .unwrap_or(&vec![])
                 .iter()
-                .filter_map(|id| {
-                    ob.orders
-                        .get(id)
-                        .map(|o| o.quantity - o.filled_quantity)
-                })
+                .filter_map(|id| ob.orders.get(id).map(|o| o.quantity - o.filled_quantity))
                 .sum();
 
             vec![json!(price), json!(count), json!(qty)]
@@ -298,11 +294,7 @@ pub async fn udf_depth(
                 .get(price)
                 .unwrap_or(&vec![])
                 .iter()
-                .filter_map(|id| {
-                    ob.orders
-                        .get(id)
-                        .map(|o| o.quantity - o.filled_quantity)
-                })
+                .filter_map(|id| ob.orders.get(id).map(|o| o.quantity - o.filled_quantity))
                 .sum();
 
             vec![json!(price), json!(count), json!(qty)]

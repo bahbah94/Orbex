@@ -135,14 +135,16 @@ impl OrderbookState {
             .collect();
 
         let (total_bid_volume, total_ask_volume): (Decimal, Decimal) =
-            self.orders.values().fold((Decimal::ZERO, Decimal::ZERO), |(bids, asks), order| {
-                let remaining = order.quantity - order.filled_quantity;
-                if order.side == "Buy" {
-                    (bids + remaining, asks)
-                } else {
-                    (bids, asks + remaining)
-                }
-            });
+            self.orders
+                .values()
+                .fold((Decimal::ZERO, Decimal::ZERO), |(bids, asks), order| {
+                    let remaining = order.quantity - order.filled_quantity;
+                    if order.side == "Buy" {
+                        (bids + remaining, asks)
+                    } else {
+                        (bids, asks + remaining)
+                    }
+                });
 
         let spread = self.get_spread().map(|(best_bid, best_ask)| Spread {
             best_bid,

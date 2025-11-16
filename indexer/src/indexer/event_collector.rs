@@ -78,15 +78,14 @@ pub async fn start(
                     match evt.as_event::<runtime::OrderPlaced>() {
                         Ok(Some(place_order_event)) => {
                             // Convert u128 to Decimal by dividing by 10^6
-                            let price = Decimal::from(place_order_event.price) / Decimal::from(1_000_000);
-                            let quantity = Decimal::from(place_order_event.quantity) / Decimal::from(1_000_000);
+                            let price =
+                                Decimal::from(place_order_event.price) / Decimal::from(1_000_000);
+                            let quantity = Decimal::from(place_order_event.quantity)
+                                / Decimal::from(1_000_000);
 
                             info!(
                                 "📦 OrderPlaced: id={}, side={}, price={}, qty={}",
-                                place_order_event.order_id,
-                                place_order_event.side,
-                                price,
-                                quantity
+                                place_order_event.order_id, place_order_event.side, price, quantity
                             );
                             let mut state = orderbook_state.lock().await;
                             let order = OrderInfo {
@@ -147,8 +146,10 @@ pub async fn start(
                     match evt.as_event::<runtime::OrderPartiallyFilled>() {
                         Ok(Some(data)) => {
                             // Convert u128 to Decimal by dividing by 10^6
-                            let filled_quantity = Decimal::from(data.filled_quantity) / Decimal::from(1_000_000);
-                            let remaining_quantity = Decimal::from(data.remaining_quantity) / Decimal::from(1_000_000);
+                            let filled_quantity =
+                                Decimal::from(data.filled_quantity) / Decimal::from(1_000_000);
+                            let remaining_quantity =
+                                Decimal::from(data.remaining_quantity) / Decimal::from(1_000_000);
 
                             println!(
                                 "📊 OrderPartiallyFilled: id={}, filled={}, remaining={}",

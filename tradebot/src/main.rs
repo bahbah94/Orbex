@@ -255,12 +255,12 @@ impl TradeBot {
             }
 
             // Fund with USDT (asset_id = 1)
-            let deposit_USDT = polkadot::tx().assets().deposit(1, fund_amount);
+            let deposit_usdt = polkadot::tx().assets().deposit(1, fund_amount);
 
             match self
                 .client
                 .tx()
-                .sign_and_submit_then_watch_default(&deposit_USDT, pair)
+                .sign_and_submit_then_watch_default(&deposit_usdt, pair)
                 .await
             {
                 Ok(progress) => match progress.wait_for_finalized().await {

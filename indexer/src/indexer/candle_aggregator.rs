@@ -197,7 +197,13 @@ mod tests {
 
     #[test]
     fn test_candle_creation() {
-        let candle = Candle::new("ETH/USDT".to_string(), "1m".to_string(), Decimal::from(2000), Decimal::from(10), 1000);
+        let candle = Candle::new(
+            "ETH/USDT".to_string(),
+            "1m".to_string(),
+            Decimal::from(2000),
+            Decimal::from(10),
+            1000,
+        );
         assert_eq!(candle.open, Decimal::from(2000));
         assert_eq!(candle.high, Decimal::from(2000));
         assert_eq!(candle.low, Decimal::from(2000));
@@ -208,7 +214,13 @@ mod tests {
 
     #[test]
     fn test_candle_update() {
-        let mut candle = Candle::new("ETH/USDT".to_string(), "1m".to_string(), Decimal::from(2000), Decimal::from(10), 1000);
+        let mut candle = Candle::new(
+            "ETH/USDT".to_string(),
+            "1m".to_string(),
+            Decimal::from(2000),
+            Decimal::from(10),
+            1000,
+        );
         candle.update(Decimal::from(2100), Decimal::from(20), 2000);
 
         assert_eq!(candle.open, Decimal::from(2000));
@@ -226,7 +238,13 @@ mod tests {
 
     #[test]
     fn test_candle_timeframe() {
-        let candle = Candle::new("ETH/USDT".to_string(), "1m".to_string(), Decimal::from(2000), Decimal::from(10), 60_000);
+        let candle = Candle::new(
+            "ETH/USDT".to_string(),
+            "1m".to_string(),
+            Decimal::from(2000),
+            Decimal::from(10),
+            60_000,
+        );
 
         // Same minute
         assert!(candle.is_in_timeframe(60_000, 60_000));
