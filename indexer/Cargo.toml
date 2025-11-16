@@ -18,7 +18,9 @@ sqlx = { version = "0.8.6", features = [
     "runtime-tokio",
     "chrono",
     "migrate",
+    "rust_decimal",
 ] }
+rust_decimal = { version = "1.36", features = ["serde"] }
 subxt = { workspace = true }
 subxt-signer = { workspace = true }
 thiserror = "2.0.17"

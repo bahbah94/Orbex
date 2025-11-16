@@ -67,8 +67,8 @@ pub async fn udf_quotes(
                 .map(|orders| orders.len())
                 .unwrap_or(0);
 
-            let spread = best_ask.saturating_sub(best_bid);
-            let mid_price = (best_bid.saturating_add(best_ask)) / 2;
+            let spread = best_ask - best_bid;
+            let mid_price = (best_bid + best_ask) / rust_decimal::Decimal::from(2);
 
             Json(json!({
                 "s": "ok",
@@ -273,7 +273,7 @@ pub async fn udf_depth(
         .iter()
         .map(|(price, count)| {
             // Calculate total quantity at this price level
-            let qty: u128 = ob
+            let qty: rust_decimal::Decimal = ob
                 .bids
                 .get(price)
                 .unwrap_or(&vec![])
@@ -281,7 +281,7 @@ pub async fn udf_depth(
                 .filter_map(|id| {
                     ob.orders
                         .get(id)
-                        .map(|o| o.quantity.saturating_sub(o.filled_quantity))
+                        .map(|o| o.quantity - o.filled_quantity)
                 })
                 .sum();
 
@@ -293,15 +293,15 @@ pub async fn udf_depth(
         .iter()
         .map(|(price, count)| {
             // Calculate total quantity at this price level
-            let qty: u128 = ob
-                .bids
+            let qty: rust_decimal::Decimal = ob
+                .asks
                 .get(price)
                 .unwrap_or(&vec![])
                 .iter()
                 .filter_map(|id| {
                     ob.orders
                         .get(id)
-                        .map(|o| o.quantity.saturating_sub(o.filled_quantity))
+                        .map(|o| o.quantity - o.filled_quantity)
                 })
                 .sum();
 

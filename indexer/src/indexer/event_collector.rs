@@ -6,6 +6,7 @@ use crate::indexer::orderbook_reducer::{OrderInfo, OrderbookState};
 use crate::indexer::runtime;
 use crate::indexer::trade_mapper::{process_trade, TradeProcessingContext};
 use anyhow::Result;
+use rust_decimal::Decimal;
 use sqlx::PgPool;
 use subxt::{OnlineClient, PolkadotConfig};
 use tracing::{debug, info};
@@ -76,20 +77,24 @@ pub async fn start(
                     info!("📦 Order placed in block {}", block_number);
                     match evt.as_event::<runtime::OrderPlaced>() {
                         Ok(Some(place_order_event)) => {
+                            // Convert u128 to Decimal by dividing by 10^6
+                            let price = Decimal::from(place_order_event.price) / Decimal::from(1_000_000);
+                            let quantity = Decimal::from(place_order_event.quantity) / Decimal::from(1_000_000);
+
                             info!(
                                 "📦 OrderPlaced: id={}, side={}, price={}, qty={}",
                                 place_order_event.order_id,
                                 place_order_event.side,
-                                place_order_event.price,
-                                place_order_event.quantity
+                                price,
+                                quantity
                             );
                             let mut state = orderbook_state.lock().await;
                             let order = OrderInfo {
                                 order_id: place_order_event.order_id,
                                 side: place_order_event.side.to_string(),
-                                price: place_order_event.price,
-                                quantity: place_order_event.quantity,
-                                filled_quantity: 0,
+                                price,
+                                quantity,
+                                filled_quantity: Decimal::ZERO,
                                 status: "Open".to_string(),
                             };
                             state.add_order(order);
@@ -141,22 +146,26 @@ pub async fn start(
                 ("Orderbook", "OrderPartiallyFilled") => {
                     match evt.as_event::<runtime::OrderPartiallyFilled>() {
                         Ok(Some(data)) => {
+                            // Convert u128 to Decimal by dividing by 10^6
+                            let filled_quantity = Decimal::from(data.filled_quantity) / Decimal::from(1_000_000);
+                            let remaining_quantity = Decimal::from(data.remaining_quantity) / Decimal::from(1_000_000);
+
                             println!(
                                 "📊 OrderPartiallyFilled: id={}, filled={}, remaining={}",
-                                data.order_id, data.filled_quantity, data.remaining_quantity
+                                data.order_id, filled_quantity, remaining_quantity
                             );
 
                             let mut state = orderbook_state.lock().await;
                             let _ = state.update_order(
                                 data.order_id,
-                                data.filled_quantity,
+                                filled_quantity,
                                 "PartiallyFilled",
                             );
                             info!(
                                 "✅ Order #{} partially filled ({}/{})",
                                 data.order_id,
-                                data.filled_quantity,
-                                data.filled_quantity + data.remaining_quantity
+                                filled_quantity,
+                                filled_quantity + remaining_quantity
                             );
                         }
                         Ok(None) => debug!("❌ OrderPartiallyFilled event is None (filtered?)"),

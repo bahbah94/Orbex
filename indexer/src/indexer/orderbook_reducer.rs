@@ -1,4 +1,5 @@
 use anyhow::Result;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use tokio::sync::broadcast;
@@ -7,17 +8,17 @@ use tracing::info;
 /// Price level in orderbook snapshot
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PriceLevel {
-    pub price: u128,
-    pub total_quantity: u128,
+    pub price: Decimal,
+    pub total_quantity: Decimal,
     pub order_count: usize,
 }
 
 /// Spread information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Spread {
-    pub best_bid: u128,
-    pub best_ask: u128,
-    pub spread: u128,
+    pub best_bid: Decimal,
+    pub best_ask: Decimal,
+    pub spread: Decimal,
 }
 
 /// Summary statistics
@@ -26,8 +27,8 @@ pub struct OrderbookSummary {
     pub total_bid_levels: usize,
     pub total_ask_levels: usize,
     pub total_orders: usize,
-    pub total_bid_volume: u128,
-    pub total_ask_volume: u128,
+    pub total_bid_volume: Decimal,
+    pub total_ask_volume: Decimal,
 }
 
 /// Complete orderbook snapshot - sent over broadcast channel
@@ -41,8 +42,8 @@ pub struct OrderbookSnapshot {
 
 #[derive(Debug)]
 pub struct OrderbookState {
-    pub bids: BTreeMap<u128, Vec<u64>>,
-    pub asks: BTreeMap<u128, Vec<u64>>,
+    pub bids: BTreeMap<Decimal, Vec<u64>>,
+    pub asks: BTreeMap<Decimal, Vec<u64>>,
     pub orders: BTreeMap<u64, OrderInfo>,
     /// Optional broadcast channel for push-based snapshot updates
     broadcast_tx: Option<broadcast::Sender<OrderbookSnapshot>>,
@@ -53,9 +54,9 @@ pub struct OrderInfo {
     pub order_id: u64,
     //pub trade: String,
     pub side: String,
-    pub price: u128,
-    pub quantity: u128,
-    pub filled_quantity: u128,
+    pub price: Decimal,
+    pub quantity: Decimal,
+    pub filled_quantity: Decimal,
     pub status: String,
 }
 
@@ -103,7 +104,7 @@ impl OrderbookState {
             .iter()
             .rev()
             .map(|(price, orders)| {
-                let total_quantity: u128 = orders
+                let total_quantity: Decimal = orders
                     .iter()
                     .filter_map(|id| self.orders.get(id).map(|o| o.quantity - o.filled_quantity))
                     .sum();
@@ -120,7 +121,7 @@ impl OrderbookState {
             .asks
             .iter()
             .map(|(price, orders)| {
-                let total_quantity: u128 = orders
+                let total_quantity: Decimal = orders
                     .iter()
                     .filter_map(|id| self.orders.get(id).map(|o| o.quantity - o.filled_quantity))
                     .sum();
@@ -133,20 +134,20 @@ impl OrderbookState {
             })
             .collect();
 
-        let (total_bid_volume, total_ask_volume): (u128, u128) =
-            self.orders.values().fold((0, 0), |(bids, asks), order| {
-                let remaining = order.quantity.saturating_sub(order.filled_quantity);
+        let (total_bid_volume, total_ask_volume): (Decimal, Decimal) =
+            self.orders.values().fold((Decimal::ZERO, Decimal::ZERO), |(bids, asks), order| {
+                let remaining = order.quantity - order.filled_quantity;
                 if order.side == "Buy" {
-                    (bids.saturating_add(remaining), asks)
+                    (bids + remaining, asks)
                 } else {
-                    (bids, asks.saturating_add(remaining))
+                    (bids, asks + remaining)
                 }
             });
 
         let spread = self.get_spread().map(|(best_bid, best_ask)| Spread {
             best_bid,
             best_ask,
-            spread: best_ask.saturating_sub(best_bid),
+            spread: best_ask - best_bid,
         });
 
         OrderbookSnapshot {
@@ -187,7 +188,7 @@ impl OrderbookState {
     pub fn update_order(
         &mut self,
         order_id: u64,
-        filled_quantity: u128,
+        filled_quantity: Decimal,
         status: &str,
     ) -> Result<()> {
         let (side, price) = if let Some(order) = self.orders.get_mut(&order_id) {
@@ -206,7 +207,7 @@ impl OrderbookState {
         Ok(())
     }
 
-    pub fn remove_order_from_level(&mut self, order_id: u64, side: &str, price: u128) {
+    pub fn remove_order_from_level(&mut self, order_id: u64, side: &str, price: Decimal) {
         match side {
             "Buy" => {
                 if let Some(orders) = self.bids.get_mut(&price) {
@@ -243,7 +244,7 @@ impl OrderbookState {
         Ok(())
     }
 
-    pub fn get_bid_depth(&self, depth: usize) -> Vec<(u128, usize)> {
+    pub fn get_bid_depth(&self, depth: usize) -> Vec<(Decimal, usize)> {
         self.bids
             .iter()
             .rev() // Highest prices first for bids
@@ -252,7 +253,7 @@ impl OrderbookState {
             .collect()
     }
 
-    pub fn get_ask_depth(&self, depth: usize) -> Vec<(u128, usize)> {
+    pub fn get_ask_depth(&self, depth: usize) -> Vec<(Decimal, usize)> {
         self.asks
             .iter()
             .take(depth) // Lowest prices first for asks
@@ -261,7 +262,7 @@ impl OrderbookState {
     }
 
     /// Get best bid/ask spread
-    pub fn get_spread(&self) -> Option<(u128, u128)> {
+    pub fn get_spread(&self) -> Option<(Decimal, Decimal)> {
         let best_bid = self.bids.keys().next_back()?;
         let best_ask = self.asks.keys().next()?;
         Some((*best_bid, *best_ask))

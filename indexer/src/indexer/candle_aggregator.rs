@@ -1,4 +1,5 @@
 use anyhow::Result;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::broadcast;
@@ -8,11 +9,11 @@ use tokio::sync::broadcast;
 pub struct Candle {
     pub symbol: String,
     pub timeframe: String, // "1m", "5m", "15m", etc.
-    pub open: u128,
-    pub high: u128,
-    pub low: u128,
-    pub close: u128,
-    pub volume: u128,
+    pub open: Decimal,
+    pub high: Decimal,
+    pub low: Decimal,
+    pub close: Decimal,
+    pub volume: Decimal,
     pub open_time: i64, // Unix timestamp in milliseconds
     pub close_time: i64,
     pub trade_count: u64,
@@ -22,8 +23,8 @@ impl Candle {
     pub fn new(
         symbol: String,
         timeframe: String,
-        price: u128,
-        quantity: u128,
+        price: Decimal,
+        quantity: Decimal,
         timestamp: i64,
     ) -> Self {
         Self {
@@ -41,11 +42,11 @@ impl Candle {
     }
 
     /// Update candle with new trade data
-    pub fn update(&mut self, price: u128, quantity: u128, timestamp: i64) {
+    pub fn update(&mut self, price: Decimal, quantity: Decimal, timestamp: i64) {
         self.high = self.high.max(price);
         self.low = self.low.min(price);
         self.close = price;
-        self.volume = self.volume.saturating_add(quantity);
+        self.volume += quantity;
         self.close_time = timestamp;
         self.trade_count += 1;
     }
@@ -133,8 +134,8 @@ impl CandleAggregator {
     pub fn process_trade(
         &mut self,
         symbol: &str,
-        price: u128,
-        quantity: u128,
+        price: Decimal,
+        quantity: Decimal,
         timestamp_ms: i64,
     ) -> Result<()> {
         for (timeframe_name, timeframe_ms) in &self.timeframes {
@@ -196,36 +197,36 @@ mod tests {
 
     #[test]
     fn test_candle_creation() {
-        let candle = Candle::new("ETH/USDC".to_string(), "1m".to_string(), 2000, 10, 1000);
-        assert_eq!(candle.open, 2000);
-        assert_eq!(candle.high, 2000);
-        assert_eq!(candle.low, 2000);
-        assert_eq!(candle.close, 2000);
-        assert_eq!(candle.volume, 10);
+        let candle = Candle::new("ETH/USDC".to_string(), "1m".to_string(), Decimal::from(2000), Decimal::from(10), 1000);
+        assert_eq!(candle.open, Decimal::from(2000));
+        assert_eq!(candle.high, Decimal::from(2000));
+        assert_eq!(candle.low, Decimal::from(2000));
+        assert_eq!(candle.close, Decimal::from(2000));
+        assert_eq!(candle.volume, Decimal::from(10));
         assert_eq!(candle.trade_count, 1);
     }
 
     #[test]
     fn test_candle_update() {
-        let mut candle = Candle::new("ETH/USDC".to_string(), "1m".to_string(), 2000, 10, 1000);
-        candle.update(2100, 20, 2000);
+        let mut candle = Candle::new("ETH/USDC".to_string(), "1m".to_string(), Decimal::from(2000), Decimal::from(10), 1000);
+        candle.update(Decimal::from(2100), Decimal::from(20), 2000);
 
-        assert_eq!(candle.open, 2000);
-        assert_eq!(candle.high, 2100);
-        assert_eq!(candle.low, 2000);
-        assert_eq!(candle.close, 2100);
-        assert_eq!(candle.volume, 30);
+        assert_eq!(candle.open, Decimal::from(2000));
+        assert_eq!(candle.high, Decimal::from(2100));
+        assert_eq!(candle.low, Decimal::from(2000));
+        assert_eq!(candle.close, Decimal::from(2100));
+        assert_eq!(candle.volume, Decimal::from(30));
         assert_eq!(candle.trade_count, 2);
 
-        candle.update(1900, 15, 3000);
-        assert_eq!(candle.high, 2100);
-        assert_eq!(candle.low, 1900);
-        assert_eq!(candle.close, 1900);
+        candle.update(Decimal::from(1900), Decimal::from(15), 3000);
+        assert_eq!(candle.high, Decimal::from(2100));
+        assert_eq!(candle.low, Decimal::from(1900));
+        assert_eq!(candle.close, Decimal::from(1900));
     }
 
     #[test]
     fn test_candle_timeframe() {
-        let candle = Candle::new("ETH/USDC".to_string(), "1m".to_string(), 2000, 10, 60_000);
+        let candle = Candle::new("ETH/USDC".to_string(), "1m".to_string(), Decimal::from(2000), Decimal::from(10), 60_000);
 
         // Same minute
         assert!(candle.is_in_timeframe(60_000, 60_000));
